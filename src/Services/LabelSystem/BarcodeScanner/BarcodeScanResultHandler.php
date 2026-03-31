@@ -344,11 +344,14 @@ final readonly class BarcodeScanResultHandler
             return null;
         }
 
-        // Digi-Key: supplierPartNumber directly
+        // Digi-Key: use DigiKey part number for direct product details lookup.
+        // Fallback to supplierPartNumber (MPN) only if the DigiKey part number is missing.
         if ($vendor === 'digikey') {
             return [
                 'providerKey' => 'digikey',
-                'providerId' => $scanResult->supplierPartNumber ?? throw new \RuntimeException('Digikey barcode does not contain required supplier part number'),
+                'providerId' => $scanResult->digikeyPartNumber
+                    ?? $scanResult->supplierPartNumber
+                    ?? throw new \RuntimeException('Digikey barcode does not contain required part number'),
                 'lotAmount' => $scanResult->quantity,
                 'lotName' => $scanResult->digikeyInvoiceNumber ?? $scanResult->digikeySalesOrderNumber ?? $scanResult->customerPO,
                 'lotUserBarcode' => $scanResult->rawInput,
