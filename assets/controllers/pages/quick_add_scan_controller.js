@@ -159,8 +159,10 @@ export default class extends Controller {
 
         const amountInput = document.getElementById("quick-add-amount");
         const storageLocationSelect = document.getElementById("quick-add-storage-location");
+        const categorySelect = document.getElementById("quick-add-category");
         const amount = parseFloat(amountInput?.value ?? "0");
         const storageLocationId = parseInt(storageLocationSelect?.value ?? "0", 10) || 0;
+        const categoryId = parseInt(categorySelect?.value ?? "0", 10) || 0;
 
         if (!(amount > 0)) {
             this._setStatus("Please enter a valid amount greater than 0.", "warning");
@@ -178,6 +180,7 @@ export default class extends Controller {
                     _csrf_token: this.csrfTokenValue,
                     scanToken: this._activeScanToken,
                     amount,
+                    categoryId,
                     storageLocationId,
                 }),
             });
@@ -203,6 +206,7 @@ export default class extends Controller {
         const title = document.getElementById("quick-add-part-name");
         const image = document.getElementById("quick-add-part-image");
         const amount = document.getElementById("quick-add-amount");
+        const category = document.getElementById("quick-add-category");
         const storageLocation = document.getElementById("quick-add-storage-location");
         const locationContainer = document.getElementById("quick-add-location-container");
 
@@ -214,6 +218,9 @@ export default class extends Controller {
         }
         if (storageLocation) {
             storageLocation.value = "";
+        }
+        if (category && data.autoCategoryId) {
+            category.value = String(data.autoCategoryId);
         }
         locationContainer?.classList.add("d-none");
 

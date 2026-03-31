@@ -39,6 +39,15 @@
                             <input type="number" id="quick-add-amount" class="form-control" min="0.0000001" step="any" value="1">
                         </div>
 
+                        <div class="mb-3">
+                            <label for="quick-add-category" class="form-label">Category</label>
+                            <select id="quick-add-category" class="form-select">
+                                {% for category in categories %}
+                                    <option value="{{ category.id }}">{{ category.fullPath }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
                         <button type="button" class="btn btn-outline-secondary btn-sm" data-action="click->pages--quick-add-scan#toggleLocation">
                             Set Storage Location
                         </button>

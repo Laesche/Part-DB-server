@@ -43,6 +43,7 @@ namespace App\Controller;
 
 use App\Entity\Parts\PartLot;
 use App\Entity\Parts\Part;
+use App\Entity\Parts\Category;
 use App\Entity\Parts\StorageLocation;
 use App\Exceptions\InfoProviderNotActiveException;
 use App\Form\LabelSystem\ScanDialogType;
@@ -212,15 +213,25 @@ class ScanController extends AbstractController
             $storageLocations,
             static fn (StorageLocation $a, StorageLocation $b): int => strcmp($a->getFullPath(), $b->getFullPath())
         );
+        $categories = $em->getRepository(Category::class)->findBy([], ['name' => 'ASC']);
+        $categories = array_values(array_filter(
+            $categories,
+            static fn (mixed $category): bool => $category instanceof Category && !$category->isNotSelectable()
+        ));
 
         return $this->render('label_system/scanner/quick_add.html.twig', [
             'storageLocations' => $storageLocations,
+            'categories' => $categories,
             'csrfToken' => $csrfTokenManager->getToken('scan_quick_add_confirm')->getValue(),
         ]);
     }
 
     #[Route(path: '/quick-add/lookup', name: 'scan_quick_add_lookup', methods: ['POST'])]
-    public function quickAddLookup(Request $request, PartInfoRetriever $infoRetriever): JsonResponse
+    public function quickAddLookup(
+        Request $request,
+        PartInfoRetriever $infoRetriever,
+        EntityManagerInterface $em
+    ): JsonResponse
     {
         $this->denyAccessUnlessGranted('@tools.label_scanner');
         $this->denyAccessUnlessGranted('@info_providers.create_parts');
@@ -295,6 +306,12 @@ class ScanController extends AbstractController
             $imageUrl = $dto->images[0]->url;
         }
 
+        $previewPart = $infoRetriever->dtoToPart($dto);
+        $autoCategory = $previewPart->getCategory();
+        if (!$autoCategory instanceof Category || $autoCategory->isNotSelectable()) {
+            $autoCategory = $this->findFirstSelectableCategory($em);
+        }
+
         return $this->json([
             'ok' => true,
             'scanToken' => $sessionToken,
@@ -302,6 +319,7 @@ class ScanController extends AbstractController
             'name' => $dto->name,
             'imageUrl' => $imageUrl,
             'amount' => isset($createInfos['lotAmount']) ? (float) $createInfos['lotAmount'] : 1.0,
+            'autoCategoryId' => $autoCategory?->getID(),
         ]);
     }
 
@@ -341,12 +359,27 @@ class ScanController extends AbstractController
         $storageLocation = $storageLocationId > 0
             ? $em->getRepository(StorageLocation::class)->find($storageLocationId)
             : null;
+        $categoryId = (int) ($payload['categoryId'] ?? 0);
 
         try {
             $dto = $infoRetriever->getDetails($scanData['providerKey'], $scanData['providerId']);
             $part = $infoRetriever->dtoToPart($dto);
         } catch (\Throwable) {
             return $this->json(['ok' => false, 'message' => 'Could not create part from provider data.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if ($categoryId > 0) {
+            $selectedCategory = $em->getRepository(Category::class)->find($categoryId);
+            if ($selectedCategory instanceof Category && !$selectedCategory->isNotSelectable()) {
+                $part->setCategory($selectedCategory);
+            }
+        }
+
+        if (!$part->getCategory() instanceof Category || $part->getCategory()?->isNotSelectable()) {
+            $fallbackCategory = $this->findFirstSelectableCategory($em);
+            if ($fallbackCategory instanceof Category) {
+                $part->setCategory($fallbackCategory);
+            }
         }
 
         $partLot = new PartLot();
@@ -360,9 +393,13 @@ class ScanController extends AbstractController
 
         $violations = $validator->validate($part);
         if (count($violations) > 0) {
+            $messages = [];
+            foreach ($violations as $violation) {
+                $messages[] = trim((string) $violation->getMessage());
+            }
             return $this->json([
                 'ok' => false,
-                'message' => (string) $violations[0]->getMessage(),
+                'message' => implode(' ', array_filter($messages)),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -419,5 +456,17 @@ class ScanController extends AbstractController
         $returnUrl = $this->generateUrl('scan_quick_add');
 
         return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1&return=' . rawurlencode($returnUrl);
+    }
+
+    private function findFirstSelectableCategory(EntityManagerInterface $em): ?Category
+    {
+        $categories = $em->getRepository(Category::class)->findBy([], ['name' => 'ASC']);
+        foreach ($categories as $category) {
+            if ($category instanceof Category && !$category->isNotSelectable()) {
+                return $category;
+            }
+        }
+
+        return null;
     }
 }
