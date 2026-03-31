@@ -416,7 +416,8 @@ class ScanController extends AbstractController
 
         $json = json_encode($payload, JSON_THROW_ON_ERROR);
         $encoded = rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
+        $returnUrl = $this->generateUrl('scan_quick_add');
 
-        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded);
+        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&return=' . rawurlencode($returnUrl);
     }
 }

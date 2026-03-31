@@ -4742,6 +4742,12 @@ async function handlePrint() {
 
     setStatus(copies > 1 ? `Printed ${copies} copies!` : 'Print complete!');
     btn.textContent = 'Print';
+    const returnUrl = getReturnUrlFromQuery();
+    if (returnUrl) {
+      setTimeout(() => {
+        window.location.assign(returnUrl);
+      }, 400);
+    }
 
   } catch (error) {
     logError(error, 'handlePrint');
@@ -7049,6 +7055,15 @@ function applyAutoLabelFromQuery() {
   detectTemplateFields();
   setStatus('Auto label loaded. Connect and click Print.');
   return true;
+}
+
+function getReturnUrlFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const returnUrl = (params.get('return') || '').trim();
+  if (!returnUrl.startsWith('/')) {
+    return null;
+  }
+  return returnUrl;
 }
 
 /**

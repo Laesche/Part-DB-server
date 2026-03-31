@@ -190,7 +190,7 @@ export default class extends Controller {
             this._setStatus(data.message || "Part added.", "success");
 
             if (data.printUrl && window.confirm("Print a label for this part now?")) {
-                window.open(data.printUrl, "_blank", "noopener,noreferrer");
+                window.location.href = data.printUrl;
             }
         } catch (_) {
             this._setStatus("Failed to add part.", "danger");
