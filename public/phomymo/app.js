@@ -133,6 +133,7 @@ import {
 // DOM helpers
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
+const DEFAULT_PRINTER_MODEL = 'm221';
 
 // Default to M-series sizes (imported from constants.js)
 let LABEL_SIZES = { ...M_SERIES_LABEL_SIZES, ...M_SERIES_ROUND_LABELS };
@@ -166,7 +167,7 @@ const state = {
     density: 6,       // 1-8 (darkness)
     copies: 1,        // Number of copies
     feed: 32,         // Feed after print in dots (8 dots = 1mm)
-    printerModel: 'auto',  // 'auto', 'narrow-48', 'mini-54', 'wide-72', 'mid-76', 'wide-81', 'd-series'
+    printerModel: DEFAULT_PRINTER_MODEL,  // Preferred default printer model
   },
   // Template state
   templateFields: [],     // Detected field names from elements
@@ -7183,7 +7184,7 @@ async function tryAutoPrintIfAlreadyConnected() {
 
   updateConnectionStatus(true);
   const deviceName = state.transport.getDeviceName?.() || '';
-  updateLabelSizeDropdown(deviceName, state.printSettings.printerModel || 'auto');
+    updateLabelSizeDropdown(deviceName, state.printSettings.printerModel || DEFAULT_PRINTER_MODEL);
   updateLengthAdjustButtons();
 
   await handlePrint();
@@ -7214,7 +7215,7 @@ function init() {
     if (savedPrintSettings) {
       const settings = safeJsonParse(savedPrintSettings, null);
       if (settings && settings.printerModel) {
-        $('#printer-model').value = settings.printerModel;
+        $('#printer-model').value = settings.printerModel || DEFAULT_PRINTER_MODEL;
       }
     }
   });
@@ -7271,7 +7272,7 @@ function init() {
     btn.classList.add('bg-white', 'hover:bg-gray-50');
     updateConnectionStatus(false);
     // Reset to M-series sizes when disconnecting/changing connection
-    updateLabelSizeDropdown('', 'auto');
+    updateLabelSizeDropdown('', DEFAULT_PRINTER_MODEL);
     updateLengthAdjustButtons();
   });
 
@@ -7393,12 +7394,15 @@ function init() {
       } else if (settings.printerModel === 'wide') {
         settings.printerModel = 'wide-72';
       }
+      if (!settings.printerModel) {
+        settings.printerModel = DEFAULT_PRINTER_MODEL;
+      }
       state.printSettings = { ...state.printSettings, ...settings };
       densitySlider.value = state.printSettings.density;
       densityValue.textContent = state.printSettings.density;
       copiesInput.value = state.printSettings.copies;
       feedSelect.value = state.printSettings.feed;
-      printerModelSelect.value = state.printSettings.printerModel || 'auto';
+      printerModelSelect.value = state.printSettings.printerModel || DEFAULT_PRINTER_MODEL;
     }
   }
 
@@ -7433,7 +7437,7 @@ function init() {
     densityValue.textContent = state.printSettings.density;
     copiesInput.value = state.printSettings.copies;
     feedSelect.value = state.printSettings.feed;
-    printerModelSelect.value = state.printSettings.printerModel || 'auto';
+    printerModelSelect.value = state.printSettings.printerModel || DEFAULT_PRINTER_MODEL;
     printSettingsDialog.classList.remove('hidden');
   });
 
@@ -7446,12 +7450,12 @@ function init() {
   });
 
   $('#print-settings-reset').addEventListener('click', () => {
-    state.printSettings = { density: 6, copies: 1, feed: 32, printerModel: 'auto' };
+    state.printSettings = { density: 6, copies: 1, feed: 32, printerModel: DEFAULT_PRINTER_MODEL };
     densitySlider.value = 6;
     densityValue.textContent = '6';
     copiesInput.value = 1;
     feedSelect.value = 32;
-    printerModelSelect.value = 'auto';
+    printerModelSelect.value = DEFAULT_PRINTER_MODEL;
   });
 
   $('#print-settings-save').addEventListener('click', () => {

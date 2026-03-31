@@ -14,6 +14,7 @@ export default class extends Controller {
     static values = {
         lookupUrl: String,
         confirmUrl: String,
+        clearPendingUrl: String,
         storageLookupUrl: String,
         storageCreateUrl: String,
         csrfToken: String,
@@ -42,6 +43,7 @@ export default class extends Controller {
                 this._busy = false;
                 this._lastDecodedText = "";
                 this._setStatus("", "secondary");
+                this._clearPendingTokens();
                 if (this._cameraStopped) {
                     this._startScanner();
                 }
@@ -346,6 +348,19 @@ export default class extends Controller {
             option.textContent = label;
         }
         select.value = value;
+    }
+
+    _clearPendingTokens() {
+        if (!this.hasClearPendingUrlValue || !this.clearPendingUrlValue) {
+            return;
+        }
+
+        fetch(this.clearPendingUrlValue, {
+            method: "POST",
+            headers: {
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        }).catch(() => {});
     }
 
     async _stopCameraStream() {

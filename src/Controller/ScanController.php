@@ -54,6 +54,7 @@ use App\Services\LabelSystem\BarcodeScanner\BarcodeSourceType;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultHandler;
 use App\Services\LabelSystem\BarcodeScanner\EIGP114BarcodeScanResult;
 use App\Services\LabelSystem\BarcodeScanner\LocalBarcodeScanResult;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityNotFoundException;
 use InvalidArgumentException;
@@ -420,6 +421,17 @@ class ScanController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/quick-add/clear-pending', name: 'scan_quick_add_clear_pending', methods: ['POST'])]
+    public function quickAddClearPending(Request $request): JsonResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $request->getSession()->remove(self::QUICK_ADD_SESSION_KEY);
+
+        return $this->json([
+            'ok' => true,
+        ]);
+    }
+
     #[Route(path: '/quick-add/storage-lookup', name: 'scan_quick_add_storage_lookup', methods: ['POST'])]
     public function quickAddStorageLookup(Request $request): JsonResponse
     {
@@ -592,12 +604,34 @@ class ScanController extends AbstractController
         try {
             $em->persist($part);
             $em->flush();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            if ($lotUserBarcode !== '') {
+                $existingLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $lotUserBarcode]);
+                if ($existingLot instanceof PartLot) {
+                    return $this->json([
+                        'ok' => true,
+                        'redirectUrl' => $this->generateUrl('app_part_show', [
+                            'id' => $existingLot->getPart()?->getID(),
+                            'highlightLot' => $existingLot->getID(),
+                        ]),
+                        'message' => 'Lot barcode already exists. Redirecting to the existing part.',
+                    ]);
+                }
+            }
+
+            $message = 'Could not save the part. Please review the selected category and storage location.';
+            if ($lotUserBarcode !== '' && $this->containsUniqueConstraintViolation($e)) {
+                $message = 'Could not save the part. The scanned lot barcode already exists.';
+            } else {
+                $rootMessage = $this->getRootExceptionMessage($e);
+                if ($rootMessage !== null) {
+                    $message = 'Could not save the part. ' . $rootMessage;
+                }
+            }
+
             return $this->json([
                 'ok' => false,
-                'message' => $lotUserBarcode !== ''
-                    ? 'Could not save the part. The scanned lot barcode may already exist.'
-                    : 'Could not save the part. Please try again or choose a different category/storage location.',
+                'message' => $message,
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -794,5 +828,38 @@ class ScanController extends AbstractController
         }
 
         return $current;
+    }
+
+    private function containsUniqueConstraintViolation(\Throwable $exception): bool
+    {
+        $current = $exception;
+        while ($current !== null) {
+            if ($current instanceof UniqueConstraintViolationException) {
+                return true;
+            }
+            $current = $current->getPrevious();
+        }
+
+        return false;
+    }
+
+    private function getRootExceptionMessage(\Throwable $exception): ?string
+    {
+        $current = $exception;
+        while ($current->getPrevious() instanceof \Throwable) {
+            $current = $current->getPrevious();
+        }
+
+        $message = trim($current->getMessage());
+        if ($message === '') {
+            return null;
+        }
+
+        $message = preg_replace('/\s+/', ' ', $message);
+        if (!is_string($message) || $message === '') {
+            return null;
+        }
+
+        return $message;
     }
 }
