@@ -41,30 +41,30 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Parts\PartLot;
+use App\Entity\Parts\Part;
+use App\Entity\Parts\StorageLocation;
 use App\Exceptions\InfoProviderNotActiveException;
 use App\Form\LabelSystem\ScanDialogType;
-use App\Services\InfoProviderSystem\Providers\LCSCProvider;
-use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultHandler;
-use App\Services\LabelSystem\BarcodeScanner\BarcodeScanHelper;
+use App\Services\InfoProviderSystem\PartInfoRetriever;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultInterface;
+use App\Services\LabelSystem\BarcodeScanner\BarcodeScanHelper;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeSourceType;
-use App\Services\LabelSystem\BarcodeScanner\LocalBarcodeScanResult;
-use App\Services\LabelSystem\BarcodeScanner\LCSCBarcodeScanResult;
+use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultHandler;
 use App\Services\LabelSystem\BarcodeScanner\EIGP114BarcodeScanResult;
+use App\Services\LabelSystem\BarcodeScanner\LocalBarcodeScanResult;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityNotFoundException;
 use InvalidArgumentException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\Routing\Attribute\Route;
-use App\Services\InfoProviderSystem\PartInfoRetriever;
-use App\Services\InfoProviderSystem\ProviderRegistry;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
-use App\Entity\Parts\Part;
-use \App\Entity\Parts\StorageLocation;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\UX\Turbo\TurboBundle;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * @see \App\Tests\Controller\ScanControllerTest
@@ -72,6 +72,8 @@ use Symfony\UX\Turbo\TurboBundle;
 #[Route(path: '/scan')]
 class ScanController extends AbstractController
 {
+    private const QUICK_ADD_SESSION_KEY = 'scan.quick_add.pending';
+
     public function __construct(
         protected BarcodeScanResultHandler $resultHandler,
         protected BarcodeScanHelper $barcodeNormalizer,
@@ -195,6 +197,186 @@ class ScanController extends AbstractController
 
             return $this->redirectToRoute('homepage');
         }
+    }
+
+    #[Route(path: '/quick-add', name: 'scan_quick_add', methods: ['GET'])]
+    public function quickAddPage(EntityManagerInterface $em, CsrfTokenManagerInterface $csrfTokenManager): Response
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@info_providers.create_parts');
+        $this->denyAccessUnlessGranted('create', new Part());
+
+        $storageLocations = $em->getRepository(StorageLocation::class)->findAll();
+        usort(
+            $storageLocations,
+            static fn (StorageLocation $a, StorageLocation $b): int => strcmp($a->getFullPath(), $b->getFullPath())
+        );
+
+        return $this->render('label_system/scanner/quick_add.html.twig', [
+            'storageLocations' => $storageLocations,
+            'csrfToken' => $csrfTokenManager->getToken('scan_quick_add_confirm')->getValue(),
+        ]);
+    }
+
+    #[Route(path: '/quick-add/lookup', name: 'scan_quick_add_lookup', methods: ['POST'])]
+    public function quickAddLookup(Request $request, PartInfoRetriever $infoRetriever): JsonResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@info_providers.create_parts');
+        $this->denyAccessUnlessGranted('create', new Part());
+
+        $payload = json_decode($request->getContent(), true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+        $input = trim((string) ($payload['input'] ?? ''));
+
+        if ($input === '') {
+            return $this->json(['ok' => false, 'message' => 'No barcode input given.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $scan = $this->barcodeNormalizer->scanBarcodeContent($input);
+            $createInfos = $this->resultHandler->getCreateInfos($scan);
+        } catch (\Throwable) {
+            return $this->json(['ok' => false, 'message' => 'Unknown or unsupported barcode format.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $isEigp114 = $scan instanceof EIGP114BarcodeScanResult;
+
+        if ($createInfos === null) {
+            return $this->json(['ok' => false, 'message' => 'This barcode cannot be used to create a part.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $dto = null;
+
+        $deadline = microtime(true) + ($isEigp114 ? 20.0 : 0.0);
+        do {
+            try {
+                $dto = $infoRetriever->getDetails($createInfos['providerKey'], $createInfos['providerId']);
+                break;
+            } catch (\Throwable $e) {
+                if (!$isEigp114 || microtime(true) >= $deadline) {
+                    break;
+                }
+                usleep(1_000_000);
+            }
+        } while ($isEigp114);
+
+        if ($dto === null) {
+            return $this->json([
+                'ok' => false,
+                'isEigp114' => $isEigp114,
+                'message' => $isEigp114
+                    ? 'Provider information is not available yet after waiting 20 seconds. Please scan again.'
+                    : 'Failed to load provider details for this barcode.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $sessionToken = bin2hex(random_bytes(16));
+        $pending = $request->getSession()->get(self::QUICK_ADD_SESSION_KEY, []);
+        $pending[$sessionToken] = [
+            'providerKey' => $createInfos['providerKey'],
+            'providerId' => $createInfos['providerId'],
+            'lotAmount' => isset($createInfos['lotAmount']) ? (float) $createInfos['lotAmount'] : 1.0,
+            'lotName' => (string) ($createInfos['lotName'] ?? ''),
+            'lotUserBarcode' => (string) ($createInfos['lotUserBarcode'] ?? ''),
+        ];
+
+        if (count($pending) > 25) {
+            $pending = array_slice($pending, -25, 25, true);
+        }
+
+        $request->getSession()->set(self::QUICK_ADD_SESSION_KEY, $pending);
+
+        $imageUrl = $dto->preview_image_url;
+        if ($imageUrl === null && is_array($dto->images) && isset($dto->images[0])) {
+            $imageUrl = $dto->images[0]->url;
+        }
+
+        return $this->json([
+            'ok' => true,
+            'scanToken' => $sessionToken,
+            'isEigp114' => $isEigp114,
+            'name' => $dto->name,
+            'imageUrl' => $imageUrl,
+            'amount' => isset($createInfos['lotAmount']) ? (float) $createInfos['lotAmount'] : 1.0,
+        ]);
+    }
+
+    #[Route(path: '/quick-add/confirm', name: 'scan_quick_add_confirm', methods: ['POST'])]
+    public function quickAddConfirm(
+        Request $request,
+        PartInfoRetriever $infoRetriever,
+        ValidatorInterface $validator,
+        EntityManagerInterface $em,
+    ): JsonResponse {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@info_providers.create_parts');
+        $this->denyAccessUnlessGranted('create', new Part());
+
+        $payload = json_decode($request->getContent(), true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+        $csrf = (string) ($payload['_csrf_token'] ?? '');
+        if (!$this->isCsrfTokenValid('scan_quick_add_confirm', $csrf)) {
+            return $this->json(['ok' => false, 'message' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
+        $scanToken = (string) ($payload['scanToken'] ?? '');
+        $pending = $request->getSession()->get(self::QUICK_ADD_SESSION_KEY, []);
+        $scanData = $pending[$scanToken] ?? null;
+        if (!is_array($scanData)) {
+            return $this->json(['ok' => false, 'message' => 'Scan session expired. Please scan again.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $amount = (float) ($payload['amount'] ?? 0);
+        if ($amount <= 0) {
+            return $this->json(['ok' => false, 'message' => 'Amount must be greater than 0.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $storageLocationId = (int) ($payload['storageLocationId'] ?? 0);
+        $storageLocation = $storageLocationId > 0
+            ? $em->getRepository(StorageLocation::class)->find($storageLocationId)
+            : null;
+
+        try {
+            $dto = $infoRetriever->getDetails($scanData['providerKey'], $scanData['providerId']);
+            $part = $infoRetriever->dtoToPart($dto);
+        } catch (\Throwable) {
+            return $this->json(['ok' => false, 'message' => 'Could not create part from provider data.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $partLot = new PartLot();
+        $partLot->setAmount($amount);
+        $partLot->setDescription((string) ($scanData['lotName'] ?? ''));
+        $partLot->setUserBarcode((string) ($scanData['lotUserBarcode'] ?? ''));
+        if ($storageLocation instanceof StorageLocation) {
+            $partLot->setStorageLocation($storageLocation);
+        }
+        $part->addPartLot($partLot);
+
+        $violations = $validator->validate($part);
+        if (count($violations) > 0) {
+            return $this->json([
+                'ok' => false,
+                'message' => (string) $violations[0]->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $em->persist($part);
+        $em->flush();
+
+        unset($pending[$scanToken]);
+        $request->getSession()->set(self::QUICK_ADD_SESSION_KEY, $pending);
+
+        return $this->json([
+            'ok' => true,
+            'message' => 'Part added successfully.',
+            'partId' => $part->getID(),
+            'partUrl' => $this->generateUrl('part_edit', ['id' => $part->getID()]),
+        ]);
     }
 
     /**
