@@ -283,16 +283,43 @@ final class PartController extends AbstractController
     {
         $this->denyAccessUnlessGranted('@info_providers.create_parts');
 
-        $dto = $infoRetriever->getDetails($providerKey, $providerId);
+        $lotAmount = $request->query->get('lotAmount');
+        $lotName = $request->query->get('lotName');
+        $lotUserBarcode = $request->query->get('lotUserBarcode');
+
+        try {
+            $dto = $infoRetriever->getDetails($providerKey, $providerId);
+        } catch (\Throwable $e) {
+            if ($providerKey === 'digikey') {
+                $this->addFlash('warning', 'DigiKey direct import failed. Falling back to provider search by MPN.');
+
+                $params = [
+                    'autofill_mpn' => $providerId,
+                    'autofill_provider' => 'digikey',
+                    'autostart' => '1',
+                ];
+
+                if ($lotAmount !== null) {
+                    $params['lotAmount'] = (string) $lotAmount;
+                }
+                if ($lotName !== null) {
+                    $params['lotName'] = (string) $lotName;
+                }
+                if ($lotUserBarcode !== null) {
+                    $params['lotUserBarcode'] = (string) $lotUserBarcode;
+                }
+
+                return $this->redirect('/en/tools/info_providers/search?' . http_build_query($params));
+            }
+
+            throw $e;
+        }
+
         $new_part = $infoRetriever->dtoToPart($dto);
 
         if ($new_part->getCategory() === null || $new_part->getCategory()->getID() === null) {
             $this->addFlash('warning', t("part.create_from_info_provider.no_category_yet"));
         }
-
-        $lotAmount = $request->query->get('lotAmount');
-        $lotName = $request->query->get('lotName');
-        $lotUserBarcode = $request->query->get('lotUserBarcode');
 
         if ($lotAmount !== null || $lotName !== null || $lotUserBarcode !== null) {
             $partLot = new PartLot();
@@ -303,15 +330,12 @@ final class PartController extends AbstractController
             $new_part->addPartLot($partLot);
 
             $this->addFlash('notice', t('part.create_from_info_provider.lot_filled_from_barcode'));
-
         }
-
 
         return $this->renderPartForm('new', $request, $new_part, [
             'info_provider_dto' => $dto,
         ]);
     }
-
     #[Route('/{target}/merge/{other}', name: 'part_merge')]
     public function merge(Request $request, Part $target, Part $other, PartMerger $partMerger): Response
     {
