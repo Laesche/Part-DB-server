@@ -144,6 +144,11 @@ export default class extends Controller {
                 return;
             }
 
+            if (data.redirectUrl) {
+                window.location.href = data.redirectUrl;
+                return;
+            }
+
             if (data?.isEigp114) {
                 await this._stopCameraStream();
             }

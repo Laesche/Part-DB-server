@@ -251,6 +251,13 @@ class ScanController extends AbstractController
 
         try {
             $scan = $this->barcodeNormalizer->scanBarcodeContent($input);
+            $infoUrl = $this->resultHandler->getInfoURL($scan);
+            if (is_string($infoUrl) && $infoUrl !== '') {
+                return $this->json([
+                    'ok' => true,
+                    'redirectUrl' => $infoUrl,
+                ]);
+            }
             $createInfos = $this->resultHandler->getCreateInfos($scan);
         } catch (\Throwable) {
             return $this->json(['ok' => false, 'message' => 'Unknown or unsupported barcode format.'], Response::HTTP_BAD_REQUEST);
@@ -535,9 +542,9 @@ class ScanController extends AbstractController
         ], UrlGeneratorInterface::ABSOLUTE_URL);
 
         $payload = [
+            'layout' => 'part_qr_left',
             'name' => $part->getName(),
             'category' => $part->getCategory()?->getFullPath() ?? '',
-            'storageLocation' => $partLot->getStorageLocation()?->getFullPath() ?? '',
             'barcode' => $barcodeUrl,
         ];
 

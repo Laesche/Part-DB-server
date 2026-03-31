@@ -7006,6 +7006,7 @@ function applyAutoLabelFromQuery() {
     return false;
   }
 
+  const layout = (payload.layout || '').toString().trim();
   const name = (payload.name || '').toString().trim() || 'Part';
   const category = (payload.category || '').toString().trim();
   const storageLocation = (payload.storageLocation || '').toString().trim();
@@ -7013,8 +7014,63 @@ function applyAutoLabelFromQuery() {
 
   const dims = state.renderer.getSingleLabelDimensions();
   const margin = 8;
-  const contentWidth = Math.max(40, dims.width - margin * 2);
 
+  state.elements = [];
+  state.selectedIds = [];
+
+  if (layout === 'part_qr_left') {
+    const gap = 8;
+    const qrSize = Math.max(32, Math.min(dims.height - margin * 2, Math.floor(dims.width * 0.42)));
+    const qrY = Math.max(margin, Math.floor((dims.height - qrSize) / 2));
+    const rightX = margin + qrSize + gap;
+    const rightWidth = Math.max(28, dims.width - rightX - margin);
+    const nameHeight = Math.max(20, Math.floor(dims.height * 0.52));
+    const categoryHeight = Math.max(14, dims.height - margin * 2 - nameHeight);
+
+    const qrElement = createQRElement(barcode, {
+      x: margin,
+      y: qrY,
+      width: qrSize,
+      height: qrSize,
+      zone: 0,
+    });
+    state.elements.push(qrElement);
+
+    const nameElement = createTextElement(name, {
+      x: rightX,
+      y: margin,
+      width: rightWidth,
+      height: nameHeight,
+      zone: 0,
+    });
+    nameElement.fontSize = 18;
+    nameElement.fontWeight = 'bold';
+    nameElement.autoScale = true;
+    nameElement.clipOverflow = true;
+    nameElement.verticalAlign = 'middle';
+    state.elements.push(nameElement);
+
+    if (category) {
+      const categoryElement = createTextElement(category, {
+        x: rightX,
+        y: margin + nameHeight,
+        width: rightWidth,
+        height: categoryHeight,
+        zone: 0,
+      });
+      categoryElement.fontSize = 11;
+      categoryElement.autoScale = true;
+      categoryElement.clipOverflow = true;
+      categoryElement.verticalAlign = 'top';
+      state.elements.push(categoryElement);
+    }
+
+    detectTemplateFields();
+    setStatus('Auto label loaded. Connect and click Print.');
+    return true;
+  }
+
+  const contentWidth = Math.max(40, dims.width - margin * 2);
   const lines = [name];
   if (category) lines.push(`Category: ${category}`);
   if (storageLocation) lines.push(`Location: ${storageLocation}`);
@@ -7022,9 +7078,6 @@ function applyAutoLabelFromQuery() {
   const lineHeight = 12;
   const headerHeight = Math.max(18, lineHeight * lines.length + 4);
   const barcodeHeight = Math.max(26, dims.height - margin * 3 - headerHeight);
-
-  state.elements = [];
-  state.selectedIds = [];
 
   lines.forEach((line, idx) => {
     const text = createTextElement(line, {
