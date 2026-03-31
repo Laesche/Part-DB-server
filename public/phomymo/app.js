@@ -7022,15 +7022,18 @@ function applyAutoLabelFromQuery() {
   state.elements = [];
   state.selectedIds = [];
 
-  if (layout === 'part_qr_left') {
+  if (layout === 'part_qr_left' || layout === 'storage_default') {
     const gap = 8;
-    const qrSize = Math.max(32, dims.height - margin * 2);
-    const qrY = margin;
+    const qrSize = 150;
+    const qrY = Math.max(margin, Math.floor((dims.height - qrSize) / 2));
     const rightX = margin + qrSize + gap;
-    const rightWidth = Math.max(28, dims.width - rightX - margin);
+    const rightWidth = 150;
     const textAreaHeight = Math.max(0, dims.height - margin * 2);
     const nameHeight = Math.max(22, Math.floor(textAreaHeight * 0.58));
     const categoryHeight = Math.max(18, textAreaHeight - nameHeight);
+    const secondaryText = layout === 'storage_default'
+      ? (storageLocation || category)
+      : category;
 
     const qrElement = createQRElement(barcode, {
       x: margin,
@@ -7052,12 +7055,12 @@ function applyAutoLabelFromQuery() {
     nameElement.fontWeight = 'bold';
     nameElement.autoScale = false;
     nameElement.noWrap = false;
-    nameElement.clipOverflow = true;
+    nameElement.clipOverflow = false;
     nameElement.verticalAlign = 'middle';
     state.elements.push(nameElement);
 
-    if (category) {
-      const categoryElement = createTextElement(category, {
+    if (secondaryText) {
+      const categoryElement = createTextElement(secondaryText, {
         x: rightX,
         y: margin + nameHeight,
         width: rightWidth,
@@ -7067,7 +7070,7 @@ function applyAutoLabelFromQuery() {
       categoryElement.fontSize = 16;
       categoryElement.autoScale = false;
       categoryElement.noWrap = false;
-      categoryElement.clipOverflow = true;
+      categoryElement.clipOverflow = false;
       categoryElement.verticalAlign = 'top';
       state.elements.push(categoryElement);
     }
@@ -8306,6 +8309,11 @@ function init() {
   tryAutoPrintIfAlreadyConnected().catch((e) => {
     console.warn('Auto-print failed:', e?.message || e);
   });
+  window.setTimeout(() => {
+    tryAutoPrintIfAlreadyConnected().catch((e) => {
+      console.warn('Delayed auto-print failed:', e?.message || e);
+    });
+  }, 1200);
 
   // Cleanup on page unload
   window.addEventListener('beforeunload', () => {

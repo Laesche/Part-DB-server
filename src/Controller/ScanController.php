@@ -305,6 +305,17 @@ class ScanController extends AbstractController
             ]);
         }
 
+        $existingLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $input]);
+        if ($existingLot instanceof PartLot) {
+            return $this->json([
+                'ok' => true,
+                'redirectUrl' => $this->generateUrl('app_part_show', [
+                    'id' => $existingLot->getPart()?->getID(),
+                    'highlightLot' => $existingLot->getID(),
+                ]),
+            ]);
+        }
+
         try {
             $scan = $this->barcodeNormalizer->scanBarcodeContent($input);
             $infoUrl = $this->resultHandler->getInfoURL($scan);
@@ -373,8 +384,14 @@ class ScanController extends AbstractController
 
         $previewPart = $infoRetriever->dtoToPart($dto);
         $autoCategory = $previewPart->getCategory();
+        $autoCategoryPath = null;
         if (!$autoCategory instanceof Category || $autoCategory->isNotSelectable()) {
-            $autoCategory = $this->findFirstSelectableCategory($em);
+            $providerCategoryPath = $this->normalizeCategoryPath((string) ($dto->category ?? ''));
+            if ($providerCategoryPath !== null) {
+                $autoCategoryPath = $providerCategoryPath;
+            } else {
+                $autoCategory = $this->findFirstSelectableCategory($em);
+            }
         }
 
         return $this->json([
@@ -385,6 +402,7 @@ class ScanController extends AbstractController
             'imageUrl' => $imageUrl,
             'amount' => isset($createInfos['lotAmount']) ? (float) $createInfos['lotAmount'] : 1.0,
             'autoCategoryId' => $autoCategory?->getID(),
+            'autoCategoryPath' => $autoCategoryPath,
         ]);
     }
 
@@ -493,6 +511,7 @@ class ScanController extends AbstractController
             ? $em->getRepository(StorageLocation::class)->find($storageLocationId)
             : null;
         $categoryId = (int) ($payload['categoryId'] ?? 0);
+        $categoryPath = $this->normalizeCategoryPath((string) ($payload['categoryPath'] ?? ''));
 
         try {
             $dto = $infoRetriever->getDetails($scanData['providerKey'], $scanData['providerId']);
@@ -506,6 +525,8 @@ class ScanController extends AbstractController
             if ($selectedCategory instanceof Category && !$selectedCategory->isNotSelectable()) {
                 $part->setCategory($selectedCategory);
             }
+        } elseif ($categoryPath !== null) {
+            $part->setCategory($this->findOrCreateCategoryPath($em, $categoryPath));
         }
 
         if (!$part->getCategory() instanceof Category || $part->getCategory()?->isNotSelectable()) {
@@ -697,5 +718,53 @@ class ScanController extends AbstractController
         }
 
         return null;
+    }
+
+    private function normalizeCategoryPath(string $path): ?string
+    {
+        $segments = preg_split('/\s*->\s*/', trim($path)) ?: [];
+        $segments = array_values(array_filter(array_map(
+            static fn (string $segment): string => trim($segment),
+            $segments
+        ), static fn (string $segment): bool => $segment !== ''));
+
+        if ($segments === []) {
+            return null;
+        }
+
+        return implode(' -> ', $segments);
+    }
+
+    private function findOrCreateCategoryPath(EntityManagerInterface $em, string $path): Category
+    {
+        $segments = explode(' -> ', $path);
+        $parent = null;
+        $current = null;
+
+        foreach ($segments as $segment) {
+            $found = $em->getRepository(Category::class)->findOneBy([
+                'name' => $segment,
+                'parent' => $parent,
+            ]);
+
+            if ($found instanceof Category) {
+                $current = $found;
+                $parent = $found;
+                continue;
+            }
+
+            $current = new Category();
+            $current->setName($segment);
+            $current->setAlternativeNames($segment);
+            $current->setParent($parent);
+            $em->persist($current);
+            $parent = $current;
+        }
+
+        if (!$current instanceof Category) {
+            throw new \RuntimeException('Could not create category path.');
+        }
+
+        return $current;
     }
 }

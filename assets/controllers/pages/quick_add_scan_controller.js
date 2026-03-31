@@ -219,7 +219,9 @@ export default class extends Controller {
         const categorySelect = document.getElementById("quick-add-category");
         const amount = parseFloat(amountInput?.value ?? "0");
         const storageLocationId = parseInt(storageLocationSelect?.value ?? "0", 10) || 0;
-        const categoryId = parseInt(categorySelect?.value ?? "0", 10) || 0;
+        const categoryValue = String(categorySelect?.value ?? "");
+        const categoryId = parseInt(categoryValue, 10) || 0;
+        const categoryPath = categoryValue.startsWith("__provider__:") ? categoryValue.slice("__provider__:".length) : "";
 
         if (!(amount > 0)) {
             this._setStatus("Please enter a valid amount greater than 0.", "warning");
@@ -238,6 +240,7 @@ export default class extends Controller {
                     scanToken: this._activeScanToken,
                     amount,
                     categoryId,
+                    categoryPath,
                     storageLocationId,
                 }),
             });
@@ -275,8 +278,21 @@ export default class extends Controller {
         if (storageLocation) {
             storageLocation.value = "";
         }
-        if (category && data.autoCategoryId) {
-            category.value = String(data.autoCategoryId);
+        if (category) {
+            Array.from(category.options)
+                .filter(option => option.dataset.providerCategory === "1")
+                .forEach(option => option.remove());
+
+            if (data.autoCategoryId) {
+                category.value = String(data.autoCategoryId);
+            } else if (data.autoCategoryPath) {
+                const option = document.createElement("option");
+                option.value = `__provider__:${data.autoCategoryPath}`;
+                option.textContent = data.autoCategoryPath;
+                option.dataset.providerCategory = "1";
+                category.appendChild(option);
+                category.value = option.value;
+            }
         }
 
         if (image) {
