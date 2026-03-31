@@ -7006,11 +7006,15 @@ function applyAutoLabelFromQuery() {
     return false;
   }
 
-  const layout = (payload.layout || '').toString().trim();
+  let layout = (payload.layout || '').toString().trim();
   const name = (payload.name || '').toString().trim() || 'Part';
   const category = (payload.category || '').toString().trim();
   const storageLocation = (payload.storageLocation || '').toString().trim();
   const barcode = (payload.barcode || '').toString().trim() || name;
+
+  if (!layout && barcode) {
+    layout = category === 'Storage Location' ? 'storage_default' : 'part_qr_left';
+  }
 
   const dims = state.renderer.getSingleLabelDimensions();
   const margin = 8;
@@ -7020,12 +7024,13 @@ function applyAutoLabelFromQuery() {
 
   if (layout === 'part_qr_left') {
     const gap = 8;
-    const qrSize = Math.max(32, Math.min(dims.height - margin * 2, Math.floor(dims.width * 0.42)));
-    const qrY = Math.max(margin, Math.floor((dims.height - qrSize) / 2));
+    const qrSize = Math.max(32, dims.height - margin * 2);
+    const qrY = margin;
     const rightX = margin + qrSize + gap;
     const rightWidth = Math.max(28, dims.width - rightX - margin);
-    const nameHeight = Math.max(20, Math.floor(dims.height * 0.52));
-    const categoryHeight = Math.max(14, dims.height - margin * 2 - nameHeight);
+    const textAreaHeight = Math.max(0, dims.height - margin * 2);
+    const nameHeight = Math.max(22, Math.floor(textAreaHeight * 0.58));
+    const categoryHeight = Math.max(18, textAreaHeight - nameHeight);
 
     const qrElement = createQRElement(barcode, {
       x: margin,
@@ -7045,7 +7050,8 @@ function applyAutoLabelFromQuery() {
     });
     nameElement.fontSize = 18;
     nameElement.fontWeight = 'bold';
-    nameElement.autoScale = true;
+    nameElement.autoScale = false;
+    nameElement.noWrap = false;
     nameElement.clipOverflow = true;
     nameElement.verticalAlign = 'middle';
     state.elements.push(nameElement);
@@ -7058,8 +7064,9 @@ function applyAutoLabelFromQuery() {
         height: categoryHeight,
         zone: 0,
       });
-      categoryElement.fontSize = 11;
-      categoryElement.autoScale = true;
+      categoryElement.fontSize = 16;
+      categoryElement.autoScale = false;
+      categoryElement.noWrap = false;
       categoryElement.clipOverflow = true;
       categoryElement.verticalAlign = 'top';
       state.elements.push(categoryElement);

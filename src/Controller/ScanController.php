@@ -59,6 +59,7 @@ use Doctrine\ORM\EntityNotFoundException;
 use InvalidArgumentException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
@@ -227,6 +228,53 @@ class ScanController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/storage-location-label', name: 'scan_storage_location_label', methods: ['GET', 'POST'])]
+    public function storageLocationLabelPage(
+        Request $request,
+        EntityManagerInterface $em,
+        CsrfTokenManagerInterface $csrfTokenManager,
+    ): Response {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@storelocations.create');
+        $this->denyAccessUnlessGranted('create', new StorageLocation());
+
+        if ($request->isMethod('POST')) {
+            $csrf = (string) $request->request->get('_csrf_token', '');
+            if (!$this->isCsrfTokenValid('scan_storage_location_label_create', $csrf)) {
+                $this->addFlash('error', 'Invalid CSRF token.');
+                return $this->redirectToRoute('scan_storage_location_label');
+            }
+
+            $name = trim((string) $request->request->get('name', ''));
+            if ($name === '') {
+                $this->addFlash('error', 'Storage location name is required.');
+                return $this->redirectToRoute('scan_storage_location_label');
+            }
+
+            $location = new StorageLocation();
+            $location->setName($name);
+
+            try {
+                $em->persist($location);
+                $em->flush();
+            } catch (\Throwable) {
+                $this->addFlash('error', 'Could not create storage location.');
+                return $this->redirectToRoute('scan_storage_location_label');
+            }
+
+            $printUrl = $this->buildPhomymoStorageLocationPrintUrl(
+                $location,
+                $this->generateUrl('scan_storage_location_label')
+            );
+
+            return new RedirectResponse($printUrl);
+        }
+
+        return $this->render('label_system/scanner/storage_location_label.html.twig', [
+            'csrfToken' => $csrfTokenManager->getToken('scan_storage_location_label_create')->getValue(),
+        ]);
+    }
+
     #[Route(path: '/quick-add/lookup', name: 'scan_quick_add_lookup', methods: ['POST'])]
     public function quickAddLookup(
         Request $request,
@@ -247,6 +295,14 @@ class ScanController extends AbstractController
 
         if ($input === '') {
             return $this->json(['ok' => false, 'message' => 'No barcode input given.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $directRedirectUrl = $this->normalizeDirectRedirectInput($request, $input);
+        if ($directRedirectUrl !== null) {
+            return $this->json([
+                'ok' => true,
+                'redirectUrl' => $directRedirectUrl,
+            ]);
         }
 
         try {
@@ -562,7 +618,7 @@ class ScanController extends AbstractController
         return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1&return=' . rawurlencode($returnUrl);
     }
 
-    private function buildPhomymoStorageLocationPrintUrl(StorageLocation $location): string
+    private function buildPhomymoStorageLocationPrintUrl(StorageLocation $location, ?string $returnUrl = null): string
     {
         $partsFilteredUrl = $this->generateUrl('parts_show_all', [
             'part_filter' => [
@@ -589,9 +645,46 @@ class ScanController extends AbstractController
             $encodedBase64 = '';
         }
         $encoded = rtrim(strtr($encodedBase64, '+/', '-_'), '=');
-        $returnUrl = $this->generateUrl('scan_quick_add');
+        $returnUrl ??= $this->generateUrl('scan_quick_add');
 
         return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1&return=' . rawurlencode($returnUrl);
+    }
+
+    private function normalizeDirectRedirectInput(Request $request, string $input): ?string
+    {
+        if ($input === '') {
+            return null;
+        }
+
+        if (str_starts_with($input, '/')) {
+            return $input;
+        }
+
+        $parts = parse_url($input);
+        if (!is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $path = (string) ($parts['path'] ?? '');
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '' || $path === '') {
+            return null;
+        }
+
+        if ($host !== strtolower($request->getHost())) {
+            return null;
+        }
+
+        $result = $path;
+        if (isset($parts['query']) && $parts['query'] !== '') {
+            $result .= '?' . $parts['query'];
+        }
+        if (isset($parts['fragment']) && $parts['fragment'] !== '') {
+            $result .= '#' . $parts['fragment'];
+        }
+
+        return $result;
     }
 
     private function findFirstSelectableCategory(EntityManagerInterface $em): ?Category

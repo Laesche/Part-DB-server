@@ -74,6 +74,14 @@
                                                 Quick Scan Add
                                             </a>
                                         </li>
+                                        {% if is_granted('@storelocations.create') %}
+                                            <li>
+                                                <a class="dropdown-item" href="{{ path('scan_storage_location_label') }}">
+                                                    <i class="fa-fw fa-solid fa-location-dot"></i>
+                                                    Storage Location Label
+                                                </a>
+                                            </li>
+                                        {% endif %}
                                     {% endif %}
                                 {% endif %}
 

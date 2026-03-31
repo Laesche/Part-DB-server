@@ -1,0 +1,39 @@
+{% extends 'main_card.html.twig' %}
+
+{% block card_title %}
+    <i class="fas fa-location-dot fa-fw"></i> Storage Location Label
+{% endblock %}
+
+{% block card_content %}
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <p class="text-muted mb-4">
+                Create a storage location, generate its QR label, and print it immediately.
+            </p>
+
+            <form method="post">
+                <input type="hidden" name="_csrf_token" value="{{ csrfToken }}">
+
+                <div class="mb-3">
+                    <label for="storage-location-name" class="form-label">Storage Location Name</label>
+                    <input
+                        type="text"
+                        id="storage-location-name"
+                        name="name"
+                        class="form-control form-control-lg"
+                        placeholder="Shelf A-01"
+                        required
+                        autofocus
+                    >
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-print fa-fw"></i> Create and Print
+                    </button>
+                    <a href="{{ path('scan_quick_add') }}" class="btn btn-outline-secondary">Back to Quick Scan</a>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}
