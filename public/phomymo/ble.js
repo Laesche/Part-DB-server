@@ -62,6 +62,48 @@ export class BLETransport {
   }
 
   /**
+   * Try reconnecting to a previously authorized Bluetooth device without opening picker
+   * Returns true if connected, false otherwise.
+   */
+  async tryReconnect() {
+    if (!BLETransport.isAvailable() || !('getDevices' in navigator.bluetooth)) {
+      return false;
+    }
+
+    if (this.isConnected()) {
+      return true;
+    }
+
+    try {
+      const devices = await navigator.bluetooth.getDevices();
+      const allowedPrefixes = ['M', 'D', 'P', 'Q', 'T', 'A', 'Mr.in', 'Phomemo'];
+
+      for (const dev of devices) {
+        const name = dev?.name || '';
+        if (!allowedPrefixes.some(prefix => name.startsWith(prefix))) {
+          continue;
+        }
+
+        try {
+          this.device = dev;
+          await this.retryWithBackoff(
+            () => this.connectGATT(),
+            BLE.MAX_RETRIES,
+            BLE.INITIAL_RETRY_DELAY_MS
+          );
+          return true;
+        } catch (_) {
+          this.device = null;
+        }
+      }
+    } catch (_) {
+      return false;
+    }
+
+    return false;
+  }
+
+  /**
    * Main connect method
    * @param {Object} options - Connection options
    * @param {boolean} options.showAllDevices - If true, show all Bluetooth devices instead of filtering

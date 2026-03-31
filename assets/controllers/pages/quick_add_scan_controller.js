@@ -9,6 +9,8 @@ import Modal from "bootstrap/js/dist/modal";
 /* stimulusFetch: 'lazy' */
 
 export default class extends Controller {
+    static targets = ["reader"];
+
     static values = {
         lookupUrl: String,
         confirmUrl: String,
@@ -56,7 +58,7 @@ export default class extends Controller {
         };
 
         this._scanner = new Html5QrcodeScanner(
-            this.element.id,
+            this.readerTarget.id,
             {
                 fps: 10,
                 qrbox: qrboxFunction,

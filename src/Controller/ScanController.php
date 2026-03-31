@@ -418,6 +418,6 @@ class ScanController extends AbstractController
         $encoded = rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
         $returnUrl = $this->generateUrl('scan_quick_add');
 
-        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&return=' . rawurlencode($returnUrl);
+        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1&return=' . rawurlencode($returnUrl);
     }
 }

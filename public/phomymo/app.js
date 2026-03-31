@@ -7066,6 +7066,66 @@ function getReturnUrlFromQuery() {
   return returnUrl;
 }
 
+function shouldAutoPrintFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const value = (params.get('autoprint') || '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
+async function tryAutoPrintIfAlreadyConnected() {
+  if (!shouldAutoPrintFromQuery()) {
+    return;
+  }
+  if (!state.canPrint) {
+    return;
+  }
+
+  const candidates = state.connectionType === 'ble'
+    ? [
+        { type: 'ble', transport: BLETransport.getShared() },
+        { type: 'usb', transport: USBTransport.getShared() },
+      ]
+    : [
+        { type: 'usb', transport: USBTransport.getShared() },
+        { type: 'ble', transport: BLETransport.getShared() },
+      ];
+
+  let connected = false;
+  for (const candidate of candidates) {
+    state.connectionType = candidate.type;
+    state.transport = candidate.transport;
+
+    connected = !!state.transport?.isConnected?.();
+    if (!connected && typeof state.transport?.tryReconnect === 'function') {
+      try {
+        connected = await state.transport.tryReconnect();
+      } catch (_) {
+        connected = false;
+      }
+    }
+
+    if (connected) {
+      const connTypeSelect = $('#conn-type');
+      if (connTypeSelect) {
+        connTypeSelect.value = candidate.type;
+      }
+      break;
+    }
+  }
+
+  if (!connected) {
+    setStatus('Auto-print requested, but printer is not connected. Connect and press Print.');
+    return;
+  }
+
+  updateConnectionStatus(true);
+  const deviceName = state.transport.getDeviceName?.() || '';
+  updateLabelSizeDropdown(deviceName, state.printSettings.printerModel || 'auto');
+  updateLengthAdjustButtons();
+
+  await handlePrint();
+}
+
 /**
  * Initialize the application
  */
@@ -8181,6 +8241,11 @@ function init() {
 
   // Initialize printer model prompt listeners
   initPrinterModelPrompt();
+
+  // Auto-print only when a connected printer session can be reused
+  tryAutoPrintIfAlreadyConnected().catch((e) => {
+    console.warn('Auto-print failed:', e?.message || e);
+  });
 
   // Cleanup on page unload
   window.addEventListener('beforeunload', () => {
