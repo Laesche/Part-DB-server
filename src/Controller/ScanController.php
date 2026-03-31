@@ -454,8 +454,12 @@ class ScanController extends AbstractController
 
         $partLot = new PartLot();
         $partLot->setAmount($amount);
-        $partLot->setDescription((string) ($scanData['lotName'] ?? ''));
-        $partLot->setUserBarcode((string) ($scanData['lotUserBarcode'] ?? ''));
+
+        $lotName = trim((string) ($scanData['lotName'] ?? ''));
+        $lotUserBarcode = trim((string) ($scanData['lotUserBarcode'] ?? ''));
+
+        $partLot->setDescription($lotName);
+        $partLot->setUserBarcode($lotUserBarcode !== '' ? $lotUserBarcode : null);
         if ($storageLocation instanceof StorageLocation) {
             $partLot->setStorageLocation($storageLocation);
         }
@@ -473,8 +477,17 @@ class ScanController extends AbstractController
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $em->persist($part);
-        $em->flush();
+        try {
+            $em->persist($part);
+            $em->flush();
+        } catch (\Throwable) {
+            return $this->json([
+                'ok' => false,
+                'message' => $lotUserBarcode !== ''
+                    ? 'Could not save the part. The scanned lot barcode may already exist.'
+                    : 'Could not save the part. Please try again or choose a different category/storage location.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         unset($pending[$scanToken]);
         $request->getSession()->set(self::QUICK_ADD_SESSION_KEY, $pending);
