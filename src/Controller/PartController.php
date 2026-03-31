@@ -291,14 +291,15 @@ final class PartController extends AbstractController
             $dto = $infoRetriever->getDetails($providerKey, $providerId);
         } catch (\Throwable $e) {
             if ($providerKey === 'digikey') {
-                $this->addFlash('warning', 'DigiKey direct import failed. Falling back to provider search by MPN.');
+                $this->addFlash('warning', 'DigiKey direct import failed. Showing DigiKey search results for MPN.');
 
                 $params = [
-                    'autofill_mpn' => $providerId,
+                    'autofill_keyword' => $providerId,   // IMPORTANT: matches InfoProviderController patch
                     'autofill_provider' => 'digikey',
                     'autostart' => '1',
                 ];
 
+                // optionally carry lot data (not yet used by search, but preserved for future)
                 if ($lotAmount !== null) {
                     $params['lotAmount'] = (string) $lotAmount;
                 }
@@ -336,6 +337,7 @@ final class PartController extends AbstractController
             'info_provider_dto' => $dto,
         ]);
     }
+
     #[Route('/{target}/merge/{other}', name: 'part_merge')]
     public function merge(Request $request, Part $target, Part $other, PartMerger $partMerger): Response
     {
@@ -414,6 +416,32 @@ final class PartController extends AbstractController
         $form = $this->createForm(PartBaseType::class, $new_part, $form_options);
 
         $form->handleRequest($request);
+        // Autofill and auto-start search from query parameters
+        $autofillKeyword = $request->query->get('autofill_keyword');
+        $autofillProvider = $request->query->get('autofill_provider');
+        $autostart = $request->query->getBoolean('autostart', false);
+
+        if (!$form->isSubmitted() && $autostart && is_string($autofillKeyword) && $autofillKeyword !== '') {
+            $form->get('keyword')->setData($autofillKeyword);
+
+            if (is_string($autofillProvider) && $autofillProvider !== '') {
+                $providerObjects = [];
+
+                try {
+                    $tmp = $this->providerRegistry->getProviderByKey($autofillProvider);
+                    if ($tmp->isActive()) {
+                        $providerObjects[] = $tmp;
+                    }
+                } catch (\InvalidArgumentException $e) {
+                    // ignore invalid provider key
+                }
+
+                if ($providerObjects !== []) {
+                    $form->get('providers')->setData($providerObjects);
+                }
+            }
+        }
+
 
         if ($form->isSubmitted() && $form->isValid()) {
             //Upload passed files
