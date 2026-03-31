@@ -336,6 +336,20 @@ class ScanController extends AbstractController
             return $this->json(['ok' => false, 'message' => 'This barcode cannot be used to create a part.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        $derivedLotBarcode = trim((string) ($createInfos['lotUserBarcode'] ?? ''));
+        if ($derivedLotBarcode !== '') {
+            $existingDerivedLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $derivedLotBarcode]);
+            if ($existingDerivedLot instanceof PartLot) {
+                return $this->json([
+                    'ok' => true,
+                    'redirectUrl' => $this->generateUrl('app_part_show', [
+                        'id' => $existingDerivedLot->getPart()?->getID(),
+                        'highlightLot' => $existingDerivedLot->getID(),
+                    ]),
+                ]);
+            }
+        }
+
         $dto = null;
 
         $deadline = microtime(true) + ($isEigp114 ? 20.0 : 0.0);
@@ -512,6 +526,21 @@ class ScanController extends AbstractController
             : null;
         $categoryId = (int) ($payload['categoryId'] ?? 0);
         $categoryPath = $this->normalizeCategoryPath((string) ($payload['categoryPath'] ?? ''));
+        $lotUserBarcode = trim((string) ($scanData['lotUserBarcode'] ?? ''));
+
+        if ($lotUserBarcode !== '') {
+            $existingLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $lotUserBarcode]);
+            if ($existingLot instanceof PartLot) {
+                return $this->json([
+                    'ok' => true,
+                    'redirectUrl' => $this->generateUrl('app_part_show', [
+                        'id' => $existingLot->getPart()?->getID(),
+                        'highlightLot' => $existingLot->getID(),
+                    ]),
+                    'message' => 'Lot barcode already exists. Redirecting to the existing part.',
+                ]);
+            }
+        }
 
         try {
             $dto = $infoRetriever->getDetails($scanData['providerKey'], $scanData['providerId']);
@@ -540,7 +569,6 @@ class ScanController extends AbstractController
         $partLot->setAmount($amount);
 
         $lotName = trim((string) ($scanData['lotName'] ?? ''));
-        $lotUserBarcode = trim((string) ($scanData['lotUserBarcode'] ?? ''));
 
         $partLot->setDescription($lotName);
         $partLot->setUserBarcode($lotUserBarcode !== '' ? $lotUserBarcode : null);

@@ -246,6 +246,10 @@ export default class extends Controller {
             });
 
             const data = await response.json();
+            if (data.redirectUrl) {
+                window.location.href = data.redirectUrl;
+                return;
+            }
             if (!response.ok || !data.ok) {
                 this._setStatus(data.message || "Could not add part.", "danger");
                 return;
