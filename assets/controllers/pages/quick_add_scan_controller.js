@@ -14,6 +14,8 @@ export default class extends Controller {
     static values = {
         lookupUrl: String,
         confirmUrl: String,
+        storageLookupUrl: String,
+        storageCreateUrl: String,
         csrfToken: String,
     };
 
@@ -24,6 +26,7 @@ export default class extends Controller {
     _modalHiddenBound = false;
     _lastDecodedText = "";
     _activeScanToken = null;
+    _scanStorageMode = false;
 
     connect() {
         if (this._scanner) {
@@ -108,10 +111,10 @@ export default class extends Controller {
 
         this._busy = true;
         this._lastDecodedText = normalized;
-        this._setStatus("Checking barcode...", "info");
+        this._setStatus(this._scanStorageMode ? "Checking storage barcode..." : "Checking barcode...", "info");
 
         try {
-            const response = await fetch(this.lookupUrlValue, {
+            const response = await fetch(this._scanStorageMode ? this.storageLookupUrlValue : this.lookupUrlValue, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -133,6 +136,14 @@ export default class extends Controller {
                 return;
             }
 
+            if (this._scanStorageMode) {
+                this._applyScannedStorageLocation(data);
+                this._scanStorageMode = false;
+                this._busy = false;
+                this._setStatus(`Storage location set to ${data.storageLocationName}.`, "success");
+                return;
+            }
+
             if (data?.isEigp114) {
                 await this._stopCameraStream();
             }
@@ -148,8 +159,49 @@ export default class extends Controller {
     }
 
     toggleLocation() {
-        const container = document.getElementById("quick-add-location-container");
-        container?.classList.toggle("d-none");
+        // no-op, storage selector is always shown
+    }
+
+    startStorageScanMode() {
+        this._scanStorageMode = true;
+        this._lastDecodedText = "";
+        this._setStatus("Scan a storage location label now...", "info");
+    }
+
+    async createStorageLocation() {
+        const name = window.prompt("New storage location name:");
+        if (!name || !name.trim()) {
+            return;
+        }
+
+        try {
+            const response = await fetch(this.storageCreateUrlValue, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                body: JSON.stringify({
+                    _csrf_token: this.csrfTokenValue,
+                    name: name.trim(),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data.ok) {
+                this._setStatus(data.message || "Could not create storage location.", "danger");
+                return;
+            }
+
+            this._insertOrSelectStorageLocation(data.storageLocationId, data.storageLocationName);
+            this._setStatus(`Storage location "${data.storageLocationName}" created and selected.`, "success");
+
+            if (data.printUrl && window.confirm("Print a new label for this storage location now?")) {
+                window.location.href = data.printUrl;
+            }
+        } catch (_) {
+            this._setStatus("Failed to create storage location.", "danger");
+        }
     }
 
     async confirmAdd() {
@@ -208,7 +260,6 @@ export default class extends Controller {
         const amount = document.getElementById("quick-add-amount");
         const category = document.getElementById("quick-add-category");
         const storageLocation = document.getElementById("quick-add-storage-location");
-        const locationContainer = document.getElementById("quick-add-location-container");
 
         if (title) {
             title.textContent = data.name ?? "Unnamed part";
@@ -222,7 +273,6 @@ export default class extends Controller {
         if (category && data.autoCategoryId) {
             category.value = String(data.autoCategoryId);
         }
-        locationContainer?.classList.add("d-none");
 
         if (image) {
             if (data.imageUrl) {
@@ -249,6 +299,28 @@ export default class extends Controller {
 
         status.className = `alert alert-${level}`;
         status.textContent = message;
+    }
+
+    _applyScannedStorageLocation(data) {
+        this._insertOrSelectStorageLocation(data.storageLocationId, data.storageLocationName);
+    }
+
+    _insertOrSelectStorageLocation(id, label) {
+        const select = document.getElementById("quick-add-storage-location");
+        if (!select) {
+            return;
+        }
+        const value = String(id);
+        let option = Array.from(select.options).find(o => o.value === value);
+        if (!option) {
+            option = document.createElement("option");
+            option.value = value;
+            option.textContent = label || value;
+            select.appendChild(option);
+        } else if (label) {
+            option.textContent = label;
+        }
+        select.value = value;
     }
 
     async _stopCameraStream() {

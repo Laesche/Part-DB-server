@@ -207,6 +207,7 @@ class ScanController extends AbstractController
         $this->denyAccessUnlessGranted('@tools.label_scanner');
         $this->denyAccessUnlessGranted('@info_providers.create_parts');
         $this->denyAccessUnlessGranted('create', new Part());
+        $this->denyAccessUnlessGranted('@storelocations.read');
 
         $storageLocations = $em->getRepository(StorageLocation::class)->findAll();
         usort(
@@ -236,6 +237,7 @@ class ScanController extends AbstractController
         $this->denyAccessUnlessGranted('@tools.label_scanner');
         $this->denyAccessUnlessGranted('@info_providers.create_parts');
         $this->denyAccessUnlessGranted('create', new Part());
+        $this->denyAccessUnlessGranted('@storelocations.read');
 
         $payload = json_decode($request->getContent(), true);
         if (!is_array($payload)) {
@@ -323,6 +325,73 @@ class ScanController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/quick-add/storage-lookup', name: 'scan_quick_add_storage_lookup', methods: ['POST'])]
+    public function quickAddStorageLookup(Request $request): JsonResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@storelocations.read');
+
+        $payload = json_decode($request->getContent(), true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+        $input = trim((string) ($payload['input'] ?? ''));
+        if ($input === '') {
+            return $this->json(['ok' => false, 'message' => 'No storage barcode input given.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $scan = $this->barcodeNormalizer->scanBarcodeContent($input);
+            $entity = $this->resultHandler->resolveEntity($scan);
+        } catch (\Throwable) {
+            return $this->json(['ok' => false, 'message' => 'Unknown barcode format.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (!$entity instanceof StorageLocation) {
+            return $this->json(['ok' => false, 'message' => 'Scanned code is not a storage location label.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return $this->json([
+            'ok' => true,
+            'storageLocationId' => $entity->getID(),
+            'storageLocationName' => $entity->getFullPath(),
+        ]);
+    }
+
+    #[Route(path: '/quick-add/storage-create', name: 'scan_quick_add_storage_create', methods: ['POST'])]
+    public function quickAddStorageCreate(Request $request, EntityManagerInterface $em): JsonResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@storelocations.create');
+        $this->denyAccessUnlessGranted('create', new StorageLocation());
+
+        $payload = json_decode($request->getContent(), true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+        $csrf = (string) ($payload['_csrf_token'] ?? '');
+        if (!$this->isCsrfTokenValid('scan_quick_add_confirm', $csrf)) {
+            return $this->json(['ok' => false, 'message' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
+        $name = trim((string) ($payload['name'] ?? ''));
+        if ($name === '') {
+            return $this->json(['ok' => false, 'message' => 'Storage location name is required.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $location = new StorageLocation();
+        $location->setName($name);
+        $em->persist($location);
+        $em->flush();
+
+        return $this->json([
+            'ok' => true,
+            'storageLocationId' => $location->getID(),
+            'storageLocationName' => $location->getFullPath(),
+            'printUrl' => $this->buildPhomymoStorageLocationPrintUrl($location),
+        ]);
+    }
+
     #[Route(path: '/quick-add/confirm', name: 'scan_quick_add_confirm', methods: ['POST'])]
     public function quickAddConfirm(
         Request $request,
@@ -333,6 +402,7 @@ class ScanController extends AbstractController
         $this->denyAccessUnlessGranted('@tools.label_scanner');
         $this->denyAccessUnlessGranted('@info_providers.create_parts');
         $this->denyAccessUnlessGranted('create', new Part());
+        $this->denyAccessUnlessGranted('@storelocations.read');
 
         $payload = json_decode($request->getContent(), true);
         if (!is_array($payload)) {
@@ -409,12 +479,19 @@ class ScanController extends AbstractController
         unset($pending[$scanToken]);
         $request->getSession()->set(self::QUICK_ADD_SESSION_KEY, $pending);
 
+        $printUrl = null;
+        try {
+            $printUrl = $this->buildPhomymoPrintUrl($part, $partLot);
+        } catch (\Throwable) {
+            $printUrl = null;
+        }
+
         return $this->json([
             'ok' => true,
             'message' => 'Part added successfully.',
             'partId' => $part->getID(),
             'partUrl' => $this->generateUrl('part_edit', ['id' => $part->getID()]),
-            'printUrl' => $this->buildPhomymoPrintUrl($part, $partLot),
+            'printUrl' => $printUrl,
         ]);
     }
 
@@ -451,8 +528,47 @@ class ScanController extends AbstractController
             'barcode' => $barcodeUrl,
         ];
 
-        $json = json_encode($payload, JSON_THROW_ON_ERROR);
-        $encoded = rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
+        $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+        if (!is_string($json)) {
+            $json = '{"name":"Part","category":"","storageLocation":"","barcode":""}';
+        }
+        $encodedBase64 = base64_encode($json);
+        if (!is_string($encodedBase64)) {
+            $encodedBase64 = '';
+        }
+        $encoded = rtrim(strtr($encodedBase64, '+/', '-_'), '=');
+        $returnUrl = $this->generateUrl('scan_quick_add');
+
+        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1&return=' . rawurlencode($returnUrl);
+    }
+
+    private function buildPhomymoStorageLocationPrintUrl(StorageLocation $location): string
+    {
+        $partsFilteredUrl = $this->generateUrl('parts_show_all', [
+            'part_filter' => [
+                'storelocation' => [
+                    'operator' => '=',
+                    'value' => $location->getID(),
+                ],
+            ],
+        ], UrlGeneratorInterface::ABSOLUTE_URL);
+
+        $payload = [
+            'name' => $location->getName(),
+            'category' => 'Storage Location',
+            'storageLocation' => $location->getFullPath(),
+            'barcode' => $partsFilteredUrl,
+        ];
+
+        $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+        if (!is_string($json)) {
+            $json = '{"name":"Storage Location","category":"Storage Location","storageLocation":"","barcode":""}';
+        }
+        $encodedBase64 = base64_encode($json);
+        if (!is_string($encodedBase64)) {
+            $encodedBase64 = '';
+        }
+        $encoded = rtrim(strtr($encodedBase64, '+/', '-_'), '=');
         $returnUrl = $this->generateUrl('scan_quick_add');
 
         return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1&return=' . rawurlencode($returnUrl);

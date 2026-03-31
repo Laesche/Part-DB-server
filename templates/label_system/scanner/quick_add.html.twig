@@ -8,6 +8,8 @@
     <div {{ stimulus_controller('pages/quick_add_scan', {
         lookupUrl: path('scan_quick_add_lookup'),
         confirmUrl: path('scan_quick_add_confirm'),
+        storageLookupUrl: path('scan_quick_add_storage_lookup'),
+        storageCreateUrl: path('scan_quick_add_storage_create'),
         csrfToken: csrfToken
     }) }}>
         <div class="alert alert-warning d-none" id="scanner-warning">
@@ -48,18 +50,24 @@
                             </select>
                         </div>
 
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-action="click->pages--quick-add-scan#toggleLocation">
-                            Set Storage Location
-                        </button>
-
-                        <div class="mt-3 d-none" id="quick-add-location-container">
+                        <div class="mt-3" id="quick-add-location-container">
                             <label for="quick-add-storage-location" class="form-label">Storage Location</label>
-                            <select id="quick-add-storage-location" class="form-select">
-                                <option value="">(none)</option>
-                                {% for location in storageLocations %}
-                                    <option value="{{ location.id }}">{{ location.fullPath }}</option>
-                                {% endfor %}
-                            </select>
+                            <div class="d-flex gap-2 align-items-start">
+                                <select id="quick-add-storage-location" class="form-select">
+                                    <option value="">(none)</option>
+                                    {% for location in storageLocations %}
+                                        <option value="{{ location.id }}">{{ location.fullPath }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-outline-secondary" title="Scan Storage Location" data-action="click->pages--quick-add-scan#startStorageScanMode">
+                                    <i class="fas fa-camera"></i>
+                                </button>
+                                {% if is_granted('@storelocations.create') %}
+                                    <button type="button" class="btn btn-outline-primary" title="Add Storage Location" data-action="click->pages--quick-add-scan#createStorageLocation">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
