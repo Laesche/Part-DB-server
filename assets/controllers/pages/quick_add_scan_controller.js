@@ -188,6 +188,10 @@ export default class extends Controller {
 
             this._modal?.hide();
             this._setStatus(data.message || "Part added.", "success");
+
+            if (data.printUrl && window.confirm("Print a label for this part now?")) {
+                window.open(data.printUrl, "_blank", "noopener,noreferrer");
+            }
         } catch (_) {
             this._setStatus("Failed to add part.", "danger");
         }

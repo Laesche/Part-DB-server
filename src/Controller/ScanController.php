@@ -62,6 +62,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapQueryParameter;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\UX\Turbo\TurboBundle;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -376,6 +377,7 @@ class ScanController extends AbstractController
             'message' => 'Part added successfully.',
             'partId' => $part->getID(),
             'partUrl' => $this->generateUrl('part_edit', ['id' => $part->getID()]),
+            'printUrl' => $this->buildPhomymoPrintUrl($part, $partLot),
         ]);
     }
 
@@ -396,5 +398,25 @@ class ScanController extends AbstractController
         }
 
         return null;
+    }
+
+    private function buildPhomymoPrintUrl(Part $part, PartLot $partLot): string
+    {
+        $barcodeUrl = $this->generateUrl('scan_qr', [
+            'type' => 'part',
+            'id' => $part->getID(),
+        ], UrlGeneratorInterface::ABSOLUTE_URL);
+
+        $payload = [
+            'name' => $part->getName(),
+            'category' => $part->getCategory()?->getFullPath() ?? '',
+            'storageLocation' => $partLot->getStorageLocation()?->getFullPath() ?? '',
+            'barcode' => $barcodeUrl,
+        ];
+
+        $json = json_encode($payload, JSON_THROW_ON_ERROR);
+        $encoded = rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
+
+        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded);
     }
 }
