@@ -50,6 +50,7 @@ use App\Exceptions\InfoProviderNotActiveException;
 use App\Repository\Parts\PartRepository;
 use App\Services\InfoProviderSystem\PartInfoRetriever;
 use App\Services\InfoProviderSystem\ProviderRegistry;
+use App\Services\InfoProviderSystem\Providers\WuerthProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityNotFoundException;
 use InvalidArgumentException;
@@ -307,8 +308,39 @@ final readonly class BarcodeScanResultHandler
             ];
         }
 
+        if ($scanResult instanceof GTINBarcodeScanResult) {
+            return $this->getCreationInfoForGTIN($scanResult);
+        }
+
         return null;
 
+    }
+
+    /**
+     * Return Würth creation info for a GTIN only when the GTIN is not already present locally and Würth returns a hit.
+     * @return array{providerKey: string, providerId: string}|null
+     */
+    private function getCreationInfoForGTIN(GTINBarcodeScanResult $scanResult): ?array
+    {
+        if ($this->em->getRepository(Part::class)->findOneBy(['gtin' => $scanResult->gtin]) instanceof Part) {
+            return null;
+        }
+
+        try {
+            $provider = $this->providerRegistry->getProviderByKey('wuerth');
+            if (!$provider->isActive() || !$provider instanceof WuerthProvider) {
+                return null;
+            }
+
+            $provider->getDetails($scanResult->gtin);
+
+            return [
+                'providerKey' => 'wuerth',
+                'providerId' => $scanResult->gtin,
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
