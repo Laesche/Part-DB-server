@@ -327,18 +327,24 @@ final readonly class BarcodeScanResultHandler
         }
 
         try {
+            error_log('Wuerth GTIN lookup started for ' . $scanResult->gtin);
+
             $provider = $this->providerRegistry->getProviderByKey('wuerth');
             if (!$provider->isActive() || !$provider instanceof WuerthProvider) {
+                error_log('Wuerth GTIN lookup aborted: provider not active or wrong type');
                 return null;
             }
 
             $provider->getDetails($scanResult->gtin);
 
+            error_log('Wuerth GTIN lookup succeeded for ' . $scanResult->gtin);
+
             return [
                 'providerKey' => 'wuerth',
                 'providerId' => $scanResult->gtin,
             ];
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            error_log('Wuerth GTIN lookup failed: ' . $e::class . ' - ' . $e->getMessage());
             return null;
         }
     }
