@@ -143,6 +143,7 @@ final class WuerthProvider implements InfoProviderInterface
                 new PurchaseInfoDTO(
                     distributor_name: 'Wuerth',
                     order_number: $supplierPartNumber,
+                    prices: [],
                     product_url: $this->extractProductUrl($product),
                 ),
             ],
