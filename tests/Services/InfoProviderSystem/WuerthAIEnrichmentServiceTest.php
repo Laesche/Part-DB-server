@@ -55,7 +55,7 @@ final class WuerthAIEnrichmentServiceTest extends TestCase
                 'response' => json_encode([
                     'category_path' => 'Befestigung -> Schrauben',
                     'category_is_new' => false,
-                    'readable_name' => 'Senkschraube mit Schlitz DIN 963 M2x5',
+                    'readable_name' => 'Senkschraube',
                     'description_points' => [
                         'Senkkopf mit Schlitzantrieb nach DIN 963',
                         'Gewinde M2 bei 5 mm Laenge',
@@ -108,13 +108,14 @@ final class WuerthAIEnrichmentServiceTest extends TestCase
 
         $enriched = $service->enrichPartDetail($detail);
 
-        $this->assertSame('Senkschraube mit Schlitz DIN 963 M2x5', $enriched->name);
+        $this->assertSame('Senkschraube M2 x 5', $enriched->name);
         $this->assertSame('Befestigung -> Schrauben', $enriched->category);
         $this->assertStringContainsString('Senkkopf mit Schlitzantrieb nach DIN 963', $enriched->description);
         $this->assertStringContainsString('Bestehende Notiz', (string) $enriched->notes);
         $this->assertStringContainsString('Tags: senkschraube, schlitz, din963, m2x5', (string) $enriched->notes);
         $this->assertSame('Wuerth', $enriched->manufacturer);
         $this->assertSame('0687914631', $enriched->mpn);
+        $this->assertSame(['senkschraube', 'schlitz', 'din963', 'm2x5'], $enriched->tags);
         $this->assertNotNull($enriched->parameters);
         $this->assertCount(10, $enriched->parameters);
         $this->assertSame('Existing', $enriched->parameters[0]->name);

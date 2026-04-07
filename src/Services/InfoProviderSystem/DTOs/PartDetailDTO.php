@@ -50,6 +50,8 @@ class PartDetailDTO extends SearchResultDTO
         public readonly ?array $images = null,
         /** @var ParameterDTO[]|null */
         public readonly ?array $parameters = null,
+        /** @var string[]|null */
+        public readonly ?array $tags = null,
         /** @var PurchaseInfoDTO[]|null */
         public readonly ?array $vendor_infos = null,
         /** The mass of the product in grams */

@@ -160,6 +160,7 @@ final class DTOtoEntityConverter
         $entity->setName($dto->name);
         $entity->setDescription($dto->description ?? '');
         $entity->setComment($dto->notes ?? '');
+        $entity->setTags(implode(', ', $dto->tags ?? []));
 
         $entity->setMass($dto->mass);
 

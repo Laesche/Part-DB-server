@@ -321,8 +321,9 @@ final class PartController extends AbstractController
 
         $new_part = $infoRetriever->dtoToPart($dto);
 
-        if ($new_part->getCategory() === null && is_string($dto->category) && str_contains($dto->category, '->')) {
-            $new_part->setCategory($this->findOrCreateCategoryPath($dto->category));
+        $providerCategoryPath = is_string($dto->category) ? $this->normalizeCategoryPath($dto->category) : null;
+        if ($new_part->getCategory() === null && $providerCategoryPath !== null) {
+            $new_part->setCategory($this->findOrCreateCategoryPath($providerCategoryPath));
             if ($new_part->getCategory()?->getID() === null) {
                 $this->em->flush();
             }
@@ -357,11 +358,8 @@ final class PartController extends AbstractController
 
     private function findOrCreateCategoryPath(string $path): Category
     {
-        $segments = preg_split('/\s*->\s*/', trim($path)) ?: [];
-        $segments = array_values(array_filter(array_map(
-            static fn (string $segment): string => trim($segment),
-            $segments
-        ), static fn (string $segment): bool => $segment !== ''));
+        $normalizedPath = $this->normalizeCategoryPath($path);
+        $segments = $normalizedPath !== null ? explode(' -> ', $normalizedPath) : [];
 
         $parent = null;
         $current = null;
@@ -391,6 +389,26 @@ final class PartController extends AbstractController
         }
 
         return $current;
+    }
+
+    private function normalizeCategoryPath(string $path): ?string
+    {
+        $path = str_replace(['—', '–', ' > ', ' / '], ['-', '-', ' -> ', ' -> '], $path);
+        if (!str_contains($path, '->') && preg_match('/\s-\s/u', $path) === 1) {
+            $path = preg_replace('/\s-\s/u', ' -> ', $path) ?? $path;
+        }
+
+        $segments = preg_split('/\s*->\s*/', trim($path)) ?: [];
+        $segments = array_values(array_filter(array_map(
+            static fn (string $segment): string => trim($segment),
+            $segments
+        ), static fn (string $segment): bool => $segment !== ''));
+
+        if ($segments === []) {
+            return null;
+        }
+
+        return implode(' -> ', $segments);
     }
 
     #[Route('/{target}/merge/{other}', name: 'part_merge')]

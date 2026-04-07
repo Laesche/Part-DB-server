@@ -70,9 +70,7 @@ final readonly class WuerthAIEnrichmentService
             return new PartDetailDTO(
                 provider_key: $detail->provider_key,
                 provider_id: $detail->provider_id,
-                name: $this->cleanText($enrichment['readable_name'] ?? null)
-                    ?? $this->cleanText($enrichment['normalized_name'] ?? null)
-                    ?? $detail->name,
+                name: $this->buildReadableName($detail, $enrichment),
                 description: $this->buildDescription($detail, $enrichment),
                 category: $resolvedCategory,
                 manufacturer: $this->cleanText($enrichment['manufacturer'] ?? null) ?? $detail->manufacturer,
@@ -90,6 +88,7 @@ final readonly class WuerthAIEnrichmentService
                 datasheets: $detail->datasheets,
                 images: $detail->images,
                 parameters: $this->mergeParameters($detail->parameters ?? [], $enrichment),
+                tags: $this->sanitizeStringList($enrichment['tags'] ?? null),
                 vendor_infos: $detail->vendor_infos,
                 mass: $detail->mass,
                 manufacturer_product_url: $detail->manufacturer_product_url,
@@ -172,13 +171,15 @@ final readonly class WuerthAIEnrichmentService
         return implode("\n\n", [
             'You enrich German Wuerth fastener and hardware product data for Part-DB.',
             'Return only valid JSON matching the provided schema.',
-            'Prefer one of the existing category paths when it clearly fits.',
+            'Prefer the provider category hierarchy when available and map it to an existing category path if possible.',
             'If no existing path fits, create a new category path using " -> " as separator.',
             'The category path should be specific but not overly deep.',
             'Create a concise readable_name in German.',
+            'For screws, the readable_name must include the metric thread size and length, for example "Senkschraube M2 x 5".',
             'Create 3 to 6 description_points in German with technical facts only.',
             'Create short lowercase tags without duplicates.',
             'For screws and fasteners, extract thread size, length in mm, drive type, head type, material, strength class, standard, surface finish, and coating when possible.',
+            'Only set head_type when it is strongly supported by the title, SKU, or standard. For "Senkschraube" and DIN 963 use "Senkkopf". Do not infer "Linsenkopf" unless explicitly indicated.',
             'If a value is unknown, return null for scalar fields and an empty array only for list fields.',
             'Input data:',
             $json,
@@ -283,7 +284,7 @@ final readonly class WuerthAIEnrichmentService
         ];
 
         foreach ($mappings as $field => $config) {
-            $value = $enrichment[$field] ?? null;
+            $value = $this->normalizeEnrichmentValue($field, $enrichment[$field] ?? null, $enrichment);
             if ($value === null || $value === '') {
                 continue;
             }
@@ -311,6 +312,28 @@ final readonly class WuerthAIEnrichmentService
     /**
      * @param array<string, mixed> $enrichment
      */
+    private function normalizeEnrichmentValue(string $field, mixed $value, array $enrichment): mixed
+    {
+        if ($field !== 'head_type') {
+            return $value;
+        }
+
+        $source = mb_strtolower(implode(' ', array_filter([
+            (string) ($enrichment['readable_name'] ?? ''),
+            (string) ($enrichment['standard'] ?? ''),
+            (string) ($enrichment['notes'] ?? ''),
+        ])));
+
+        if (str_contains($source, 'senkschraube') || str_contains($source, 'din 963')) {
+            return 'Senkkopf';
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $enrichment
+     */
     private function buildDescription(PartDetailDTO $detail, array $enrichment): string
     {
         $descriptionPoints = $this->sanitizeStringList($enrichment['description_points'] ?? null);
@@ -327,6 +350,31 @@ final readonly class WuerthAIEnrichmentService
     /**
      * @param array<string, mixed> $enrichment
      */
+    private function buildReadableName(PartDetailDTO $detail, array $enrichment): string
+    {
+        $name = $this->cleanText($enrichment['readable_name'] ?? null)
+            ?? $this->cleanText($enrichment['normalized_name'] ?? null)
+            ?? $detail->name;
+
+        $name = $this->normalizeScrewBaseName($name, $detail, $enrichment);
+
+        $threadSize = $this->cleanText($enrichment['thread_size'] ?? null) ?? $this->extractThreadSize($detail, $name);
+        $lengthMm = $this->extractLengthMm($detail, $enrichment, $name);
+
+        if ($threadSize === null || $lengthMm === null) {
+            return $name;
+        }
+
+        $sizeSuffix = sprintf('%s x %s', strtoupper($threadSize), $this->formatNumber($lengthMm));
+        $name = preg_replace('/\s+M\s*\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?\b/u', '', $name) ?? $name;
+        $name = trim(preg_replace('/\s+/', ' ', $name) ?? $name);
+
+        return trim($name . ' ' . $sizeSuffix);
+    }
+
+    /**
+     * @param array<string, mixed> $enrichment
+     */
     private function resolveCategoryPath(array $enrichment): ?string
     {
         $categoryPath = $this->cleanText($enrichment['category_path'] ?? null);
@@ -334,10 +382,7 @@ final readonly class WuerthAIEnrichmentService
             return null;
         }
 
-        return implode(' -> ', array_filter(array_map(
-            static fn (string $segment): string => trim($segment),
-            preg_split('/\s*->\s*/', $categoryPath) ?: []
-        ), static fn (string $segment): bool => $segment !== ''));
+        return $this->normalizeCategoryPath($categoryPath);
     }
 
     /**
@@ -404,6 +449,75 @@ final readonly class WuerthAIEnrichmentService
         }
 
         return 'Tags: ' . implode(', ', $tags);
+    }
+
+    private function normalizeScrewBaseName(string $name, PartDetailDTO $detail, array $enrichment): string
+    {
+        $source = mb_strtolower(($detail->name ?? '') . ' ' . ($detail->description ?? '') . ' ' . ($enrichment['standard'] ?? ''));
+
+        if (str_contains($source, 'senkschraube') || str_contains($source, 'din 963')) {
+            return 'Senkschraube';
+        }
+
+        return $name;
+    }
+
+    private function extractThreadSize(PartDetailDTO $detail, string $name): ?string
+    {
+        $haystack = implode(' ', array_filter([$detail->name, $detail->description, $detail->mpn, $name]));
+        if (preg_match('/\b(M\s*\d+(?:[.,]\d+)?)\s*[xX]\s*\d+(?:[.,]\d+)?\b/u', $haystack, $matches) === 1) {
+            return strtoupper(str_replace(' ', '', str_replace(',', '.', $matches[1])));
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $enrichment
+     */
+    private function extractLengthMm(PartDetailDTO $detail, array $enrichment, string $name): ?float
+    {
+        $length = $enrichment['length_mm'] ?? null;
+        if (is_numeric($length)) {
+            return (float) $length;
+        }
+
+        $haystack = implode(' ', array_filter([$detail->name, $detail->description, $detail->mpn, $name]));
+        if (preg_match('/\bM\s*\d+(?:[.,]\d+)?\s*[xX]\s*(\d+(?:[.,]\d+)?)\b/u', $haystack, $matches) === 1) {
+            return (float) str_replace(',', '.', $matches[1]);
+        }
+
+        return null;
+    }
+
+    private function formatNumber(float $number): string
+    {
+        if (abs($number - round($number)) < 0.00001) {
+            return (string) (int) round($number);
+        }
+
+        $formatted = rtrim(rtrim(number_format($number, 2, '.', ''), '0'), '.');
+        return str_replace('.', ',', $formatted);
+    }
+
+    private function normalizeCategoryPath(string $categoryPath): ?string
+    {
+        $categoryPath = str_replace(['—', '–', ' > ', ' / '], ['-', '-', ' -> ', ' -> '], $categoryPath);
+        if (!str_contains($categoryPath, '->') && preg_match('/\s-\s/u', $categoryPath) === 1) {
+            $categoryPath = preg_replace('/\s-\s/u', ' -> ', $categoryPath) ?? $categoryPath;
+        }
+
+        $segments = preg_split('/\s*->\s*/', trim($categoryPath)) ?: [];
+        $segments = array_values(array_filter(array_map(
+            static fn (string $segment): string => trim($segment),
+            $segments
+        ), static fn (string $segment): bool => $segment !== ''));
+
+        if ($segments === []) {
+            return null;
+        }
+
+        return implode(' -> ', $segments);
     }
 
     private function cleanText(mixed $value): ?string
