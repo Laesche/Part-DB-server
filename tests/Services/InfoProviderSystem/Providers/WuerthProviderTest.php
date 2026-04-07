@@ -65,6 +65,7 @@ final class WuerthProviderTest extends TestCase
                         'value' => '0687914631',
                         'description' => 'Technical name',
                         'label' => 'Visible name',
+                        'categoryPath' => 'Schrauben - Senkschraube',
                         'image' => 'https://example.com/image.jpg',
                     ],
                 ],
@@ -75,6 +76,7 @@ final class WuerthProviderTest extends TestCase
 
         $this->assertSame('Visible name', $details->name);
         $this->assertSame('Technical name', $details->description);
+        $this->assertSame('Schrauben - Senkschraube', $details->category);
         $this->assertSame('4056807624631', $details->gtin);
         $this->assertCount(1, $details->vendor_infos ?? []);
         $this->assertSame('Wuerth', $details->vendor_infos[0]->distributor_name);

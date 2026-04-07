@@ -64,7 +64,8 @@ final readonly class WuerthAIEnrichmentService
                 return $detail;
             }
 
-            $resolvedCategory = $this->resolveCategoryPath($enrichment);
+            $resolvedCategory = $this->resolveCategoryPath($enrichment)
+                ?? $this->normalizeCategoryPath((string) ($detail->category ?? ''));
             $this->logDebug('Wuerth AI enrichment resolved category: ' . ($resolvedCategory ?? 'none'));
 
             return new PartDetailDTO(
@@ -158,6 +159,7 @@ final readonly class WuerthAIEnrichmentService
                 'supplier_part_number' => $detail->vendor_infos[0]->order_number ?? null,
                 'title' => $detail->name,
                 'description' => $detail->description,
+                'provider_category' => $detail->category,
                 'existing_notes' => $detail->notes,
             ],
             'existing_category_paths' => $categoryPaths,
