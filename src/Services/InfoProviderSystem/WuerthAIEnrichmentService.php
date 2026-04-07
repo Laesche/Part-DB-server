@@ -36,6 +36,8 @@ final readonly class WuerthAIEnrichmentService
     public function __construct(
         private HttpClientInterface $client,
         private EntityManagerInterface $em,
+        #[Autowire('%env(bool:OPENAI_WUERTH_ENABLED)%')]
+        private bool $enabled = true,
         #[Autowire('%env(string:OPENAI_API_KEY)%')]
         private string $apiKey = '',
         #[Autowire('%env(string:OPENAI_WUERTH_ENRICH_MODEL)%')]
@@ -47,6 +49,11 @@ final readonly class WuerthAIEnrichmentService
 
     public function enrichPartDetail(PartDetailDTO $detail): PartDetailDTO
     {
+        if (!$this->enabled) {
+            $this->logDebug('Wuerth AI enrichment skipped: OPENAI_WUERTH_ENABLED is false');
+            return $detail;
+        }
+
         if ($this->apiKey === '') {
             $this->logDebug('Wuerth AI enrichment skipped: OPENAI_API_KEY is empty');
             return $detail;
