@@ -80,7 +80,7 @@ final class PartController extends AbstractController
         private readonly EventCommentHelper $commentHelper,
         private readonly PartInfoSettings $partInfoSettings,
         private readonly IpnSuggestSettings $ipnSuggestSettings,
-        #[Autowire('%env(bool:OPENAI_WUERTH_DEBUG)%')]
+        #[Autowire('%env(bool:WUERTH_LLM_DEBUG)%')]
         private readonly bool $wuerthAiDebug = false,
     ) {
     }

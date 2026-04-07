@@ -31,18 +31,16 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final readonly class WuerthAIEnrichmentService
 {
-    private const OPENAI_URL = 'https://api.openai.com/v1/responses';
-
     public function __construct(
         private HttpClientInterface $client,
         private EntityManagerInterface $em,
-        #[Autowire('%env(bool:OPENAI_WUERTH_ENABLED)%')]
+        #[Autowire('%env(bool:WUERTH_LLM_ENABLED)%')]
         private bool $enabled = true,
-        #[Autowire('%env(string:OPENAI_API_KEY)%')]
-        private string $apiKey = '',
-        #[Autowire('%env(string:OPENAI_WUERTH_ENRICH_MODEL)%')]
-        private string $model = 'gpt-5.4-mini',
-        #[Autowire('%env(bool:OPENAI_WUERTH_DEBUG)%')]
+        #[Autowire('%env(string:WUERTH_LLM_ENDPOINT)%')]
+        private string $endpoint = 'http://127.0.0.1:11434/api/generate',
+        #[Autowire('%env(string:WUERTH_LLM_MODEL)%')]
+        private string $model = 'qwen3:8b',
+        #[Autowire('%env(bool:WUERTH_LLM_DEBUG)%')]
         private bool $debug = false,
     ) {
     }
@@ -50,12 +48,12 @@ final readonly class WuerthAIEnrichmentService
     public function enrichPartDetail(PartDetailDTO $detail): PartDetailDTO
     {
         if (!$this->enabled) {
-            $this->logDebug('Wuerth AI enrichment skipped: OPENAI_WUERTH_ENABLED is false');
+            $this->logDebug('Wuerth AI enrichment skipped: WUERTH_LLM_ENABLED is false');
             return $detail;
         }
 
-        if ($this->apiKey === '') {
-            $this->logDebug('Wuerth AI enrichment skipped: OPENAI_API_KEY is empty');
+        if (trim($this->endpoint) === '') {
+            $this->logDebug('Wuerth AI enrichment skipped: WUERTH_LLM_ENDPOINT is empty');
             return $detail;
         }
 
@@ -72,8 +70,10 @@ final readonly class WuerthAIEnrichmentService
             return new PartDetailDTO(
                 provider_key: $detail->provider_key,
                 provider_id: $detail->provider_id,
-                name: $this->cleanText($enrichment['normalized_name'] ?? null) ?? $detail->name,
-                description: $this->cleanText($enrichment['normalized_description'] ?? null) ?? $detail->description,
+                name: $this->cleanText($enrichment['readable_name'] ?? null)
+                    ?? $this->cleanText($enrichment['normalized_name'] ?? null)
+                    ?? $detail->name,
+                description: $this->buildDescription($detail, $enrichment),
                 category: $resolvedCategory,
                 manufacturer: $this->cleanText($enrichment['manufacturer'] ?? null) ?? $detail->manufacturer,
                 mpn: $this->cleanText($enrichment['mpn'] ?? null) ?? $detail->mpn,
@@ -82,7 +82,11 @@ final readonly class WuerthAIEnrichmentService
                 provider_url: $detail->provider_url,
                 footprint: $detail->footprint,
                 gtin: $detail->gtin,
-                notes: $this->mergeNotes($detail->notes, $this->cleanText($enrichment['notes'] ?? null)),
+                notes: $this->mergeNotes(
+                    $detail->notes,
+                    $this->cleanText($enrichment['notes'] ?? null),
+                    $this->sanitizeStringList($enrichment['tags'] ?? null)
+                ),
                 datasheets: $detail->datasheets,
                 images: $detail->images,
                 parameters: $this->mergeParameters($detail->parameters ?? [], $enrichment),
@@ -105,80 +109,15 @@ final readonly class WuerthAIEnrichmentService
     {
         $this->logDebug('Wuerth AI enrichment started for ' . ($detail->gtin ?? 'unknown'));
 
-        $response = $this->client->request('POST', self::OPENAI_URL, [
+        $response = $this->client->request('POST', $this->endpoint, [
             'headers' => [
-                'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
             ],
             'json' => [
                 'model' => $this->model,
-                'instructions' => implode("\n", [
-                    'Please reply in JSON format only.',
-                    'Create a fitting JSON object that can be used in the controller to enrich the information for Part-DB.',
-                    'Use the provided name, description, and existing categories.',
-                    'If no category fits, add a new category path.',
-                    'Create a list of attributes for Part-DB from all attributes you can derive from the provided name and description.',
-                    'Prefer an existing category path if it clearly fits.',
-                    'For screws and fasteners, extract metric thread size, length in mm, drive type, head type, material, and finish whenever possible.',
-                    'Use concise normalized technical wording.',
-                    'Return only valid JSON matching the schema.',
-                ]),
-                'input' => [[
-                    'role' => 'user',
-                    'content' => [[
-                        'type' => 'input_text',
-                        'text' => json_encode([
-                            'product' => [
-                                'ean' => $detail->gtin,
-                                'supplier_part_number' => $detail->vendor_infos[0]->order_number ?? null,
-                                'name' => $detail->name,
-                                'description' => $detail->description,
-                                'existing_notes' => $detail->notes,
-                            ],
-                            'existing_category_paths' => $categoryPaths,
-                        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
-                    ]],
-                ]],
-                'text' => [
-                    'format' => [
-                        'type' => 'json_schema',
-                        'name' => 'wuerth_enrichment',
-                        'schema' => [
-                            'type' => 'object',
-                            'additionalProperties' => false,
-                            'properties' => [
-                                'normalized_name' => ['type' => 'string'],
-                                'normalized_description' => ['type' => 'string'],
-                                'manufacturer' => ['type' => ['string', 'null']],
-                                'mpn' => ['type' => ['string', 'null']],
-                                'category_path' => ['type' => ['string', 'null']],
-                                'category_is_new' => ['type' => 'boolean'],
-                                'notes' => ['type' => ['string', 'null']],
-                                'thread_size' => ['type' => ['string', 'null']],
-                                'length_mm' => ['type' => ['number', 'null']],
-                                'drive_type' => ['type' => ['string', 'null']],
-                                'head_type' => ['type' => ['string', 'null']],
-                                'material' => ['type' => ['string', 'null']],
-                                'finish' => ['type' => ['string', 'null']],
-                            ],
-                            'required' => [
-                                'normalized_name',
-                                'normalized_description',
-                                'manufacturer',
-                                'mpn',
-                                'category_path',
-                                'category_is_new',
-                                'notes',
-                                'thread_size',
-                                'length_mm',
-                                'drive_type',
-                                'head_type',
-                                'material',
-                                'finish',
-                            ],
-                        ],
-                    ],
-                ],
+                'prompt' => $this->buildPrompt($detail, $categoryPaths),
+                'format' => $this->getResponseSchema(),
+                'stream' => false,
             ],
         ]);
 
@@ -210,6 +149,95 @@ final readonly class WuerthAIEnrichmentService
         }
 
         return $decoded;
+    }
+
+    private function buildPrompt(PartDetailDTO $detail, array $categoryPaths): string
+    {
+        $input = [
+            'product' => [
+                'ean' => $detail->gtin,
+                'supplier_part_number' => $detail->vendor_infos[0]->order_number ?? null,
+                'title' => $detail->name,
+                'description' => $detail->description,
+                'existing_notes' => $detail->notes,
+            ],
+            'existing_category_paths' => $categoryPaths,
+        ];
+
+        $json = json_encode($input, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($json)) {
+            $json = '{}';
+        }
+
+        return implode("\n\n", [
+            'You enrich German Wuerth fastener and hardware product data for Part-DB.',
+            'Return only valid JSON matching the provided schema.',
+            'Prefer one of the existing category paths when it clearly fits.',
+            'If no existing path fits, create a new category path using " -> " as separator.',
+            'The category path should be specific but not overly deep.',
+            'Create a concise readable_name in German.',
+            'Create 3 to 6 description_points in German with technical facts only.',
+            'Create short lowercase tags without duplicates.',
+            'For screws and fasteners, extract thread size, length in mm, drive type, head type, material, strength class, standard, surface finish, and coating when possible.',
+            'If a value is unknown, return null for scalar fields and an empty array only for list fields.',
+            'Input data:',
+            $json,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getResponseSchema(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => [
+                'category_path' => ['type' => ['string', 'null']],
+                'category_is_new' => ['type' => 'boolean'],
+                'readable_name' => ['type' => 'string'],
+                'description_points' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+                'tags' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+                'manufacturer' => ['type' => ['string', 'null']],
+                'mpn' => ['type' => ['string', 'null']],
+                'notes' => ['type' => ['string', 'null']],
+                'thread_size' => ['type' => ['string', 'null']],
+                'length_mm' => ['type' => ['number', 'null']],
+                'drive_type' => ['type' => ['string', 'null']],
+                'head_type' => ['type' => ['string', 'null']],
+                'material' => ['type' => ['string', 'null']],
+                'finish' => ['type' => ['string', 'null']],
+                'strength_class' => ['type' => ['string', 'null']],
+                'standard' => ['type' => ['string', 'null']],
+                'coating' => ['type' => ['string', 'null']],
+            ],
+            'required' => [
+                'category_path',
+                'category_is_new',
+                'readable_name',
+                'description_points',
+                'tags',
+                'manufacturer',
+                'mpn',
+                'notes',
+                'thread_size',
+                'length_mm',
+                'drive_type',
+                'head_type',
+                'material',
+                'finish',
+                'strength_class',
+                'standard',
+                'coating',
+            ],
+        ];
     }
 
     /**
@@ -249,6 +277,9 @@ final readonly class WuerthAIEnrichmentService
             'head_type' => ['name' => 'Head type'],
             'material' => ['name' => 'Material'],
             'finish' => ['name' => 'Finish'],
+            'strength_class' => ['name' => 'Strength class'],
+            'standard' => ['name' => 'Standard'],
+            'coating' => ['name' => 'Coating'],
         ];
 
         foreach ($mappings as $field => $config) {
@@ -280,6 +311,22 @@ final readonly class WuerthAIEnrichmentService
     /**
      * @param array<string, mixed> $enrichment
      */
+    private function buildDescription(PartDetailDTO $detail, array $enrichment): string
+    {
+        $descriptionPoints = $this->sanitizeStringList($enrichment['description_points'] ?? null);
+        if ($descriptionPoints === []) {
+            return $detail->description;
+        }
+
+        return implode("\n", array_map(
+            static fn (string $point): string => '- ' . $point,
+            $descriptionPoints
+        ));
+    }
+
+    /**
+     * @param array<string, mixed> $enrichment
+     */
     private function resolveCategoryPath(array $enrichment): ?string
     {
         $categoryPath = $this->cleanText($enrichment['category_path'] ?? null);
@@ -293,10 +340,20 @@ final readonly class WuerthAIEnrichmentService
         ), static fn (string $segment): bool => $segment !== ''));
     }
 
-    private function mergeNotes(?string $existingNotes, ?string $newNotes): ?string
+    /**
+     * @param string[] $tags
+     */
+    private function mergeNotes(?string $existingNotes, ?string $newNotes, array $tags = []): ?string
     {
         $existingNotes = $this->cleanText($existingNotes);
         $newNotes = $this->cleanText($newNotes);
+        $tagNotes = $this->formatTagsAsNotes($tags);
+
+        if ($newNotes === null) {
+            $newNotes = $tagNotes;
+        } elseif ($tagNotes !== null) {
+            $newNotes .= "\n\n" . $tagNotes;
+        }
 
         if ($existingNotes === null) {
             return $newNotes;
@@ -307,6 +364,46 @@ final readonly class WuerthAIEnrichmentService
         }
 
         return $existingNotes . "\n\n" . $newNotes;
+    }
+
+    /**
+     * @param mixed $value
+     * @return string[]
+     */
+    private function sanitizeStringList(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($value as $item) {
+            $clean = $this->cleanText($item);
+            if ($clean === null) {
+                continue;
+            }
+
+            $key = mb_strtolower($clean);
+            if (isset($result[$key])) {
+                continue;
+            }
+
+            $result[$key] = $clean;
+        }
+
+        return array_values($result);
+    }
+
+    /**
+     * @param string[] $tags
+     */
+    private function formatTagsAsNotes(array $tags): ?string
+    {
+        if ($tags === []) {
+            return null;
+        }
+
+        return 'Tags: ' . implode(', ', $tags);
     }
 
     private function cleanText(mixed $value): ?string
@@ -325,35 +422,8 @@ final readonly class WuerthAIEnrichmentService
      */
     private function extractTextFromResponse(array $data): ?string
     {
-        if (isset($data['output_text']) && is_string($data['output_text']) && $data['output_text'] !== '') {
-            return $data['output_text'];
-        }
-
-        $output = $data['output'] ?? null;
-        if (!is_array($output)) {
-            return null;
-        }
-
-        foreach ($output as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $content = $item['content'] ?? null;
-            if (!is_array($content)) {
-                continue;
-            }
-
-            foreach ($content as $contentItem) {
-                if (!is_array($contentItem)) {
-                    continue;
-                }
-
-                $text = $contentItem['text'] ?? null;
-                if (is_string($text) && $text !== '') {
-                    return $text;
-                }
-            }
+        if (isset($data['response']) && is_string($data['response']) && $data['response'] !== '') {
+            return $data['response'];
         }
 
         return null;

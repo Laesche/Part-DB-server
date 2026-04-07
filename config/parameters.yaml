@@ -100,10 +100,10 @@ parameters:
   env(TRUSTED_HOSTS): '' # Trust all host names by default
 
   env(DEFAULT_URI): 'https://partdb.changeme.invalid/'
-  env(OPENAI_WUERTH_ENABLED): 0
-  env(OPENAI_API_KEY): ''
-  env(OPENAI_WUERTH_ENRICH_MODEL): 'gpt-5.4-mini'
-  env(OPENAI_WUERTH_DEBUG): 0
+  env(WUERTH_LLM_ENABLED): 0
+  env(WUERTH_LLM_ENDPOINT): 'http://192.168.178.33:11434/api/generate'
+  env(WUERTH_LLM_MODEL): 'qwen3:8b'
+  env(WUERTH_LLM_DEBUG): 0
 
   env(SAML_ROLE_MAPPING): '{}'
 
