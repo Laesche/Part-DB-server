@@ -31,6 +31,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 final class WuerthProvider implements InfoProviderInterface
 {
     private const SEARCH_URL = 'https://eshop.wuerth.de/is-bin/INTERSHOP.enfinity/WFS/1401-B1-Site/de_DE/-/EUR/ViewParametricSearch-Suggest';
+    private const DEFAULT_CATEGORY = 'Wuerth';
 
     public function __construct(
         private readonly HttpClientInterface $client,
@@ -124,7 +125,7 @@ final class WuerthProvider implements InfoProviderInterface
             provider_id: $ean,
             name: (string) ($product['label'] ?? $product['value'] ?? $ean),
             description: (string) ($product['description'] ?? ''),
-            category: $this->extractCategory($product),
+            category: self::DEFAULT_CATEGORY,
             preview_image_url: isset($product['image']) && is_string($product['image']) ? $product['image'] : null,
             provider_url: $this->extractProductUrl($product),
             gtin: $ean,
@@ -143,7 +144,7 @@ final class WuerthProvider implements InfoProviderInterface
             provider_id: $ean,
             name: (string) ($product['label'] ?? $supplierPartNumber),
             description: (string) ($product['description'] ?? ''),
-            category: $this->extractCategory($product),
+            category: self::DEFAULT_CATEGORY,
             preview_image_url: isset($product['image']) && is_string($product['image']) ? $product['image'] : null,
             provider_url: $this->extractProductUrl($product),
             gtin: $ean,
@@ -165,64 +166,5 @@ final class WuerthProvider implements InfoProviderInterface
     {
         $target = $product['target'] ?? null;
         return is_string($target) && $target !== '' ? $target : null;
-    }
-
-    /**
-     * @param array<string, mixed> $product
-     */
-    private function extractCategory(array $product): ?string
-    {
-        $candidates = [
-            $product['categoryPath'] ?? null,
-            $product['category_path'] ?? null,
-            $product['category'] ?? null,
-            $product['articleGroupName'] ?? null,
-            $product['articleGroup'] ?? null,
-            $product['breadcrumb'] ?? null,
-            $product['breadcrumbs'] ?? null,
-            $product['categories'] ?? null,
-            $product['classifications'] ?? null,
-        ];
-
-        foreach ($candidates as $candidate) {
-            $category = $this->normalizeCategoryValue($candidate);
-            if ($category !== null) {
-                return $category;
-            }
-        }
-
-        return null;
-    }
-
-    private function normalizeCategoryValue(mixed $value): ?string
-    {
-        if (is_string($value)) {
-            $value = trim(preg_replace('/\s+/', ' ', $value) ?? '');
-            return $value !== '' ? $value : null;
-        }
-
-        if (!is_array($value)) {
-            return null;
-        }
-
-        if (isset($value['name']) && is_string($value['name'])) {
-            return $this->normalizeCategoryValue($value['name']);
-        }
-
-        $segments = [];
-        foreach ($value as $item) {
-            $normalized = $this->normalizeCategoryValue($item);
-            if ($normalized === null) {
-                continue;
-            }
-
-            $segments[] = $normalized;
-        }
-
-        if ($segments === []) {
-            return null;
-        }
-
-        return implode(' -> ', array_values(array_unique($segments)));
     }
 }
