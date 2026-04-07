@@ -55,6 +55,7 @@ use Exception;
 use Omines\DataTablesBundle\DataTableFactory;
 use Symfony\Bridge\Doctrine\Attribute\MapEntity;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -79,6 +80,8 @@ final class PartController extends AbstractController
         private readonly EventCommentHelper $commentHelper,
         private readonly PartInfoSettings $partInfoSettings,
         private readonly IpnSuggestSettings $ipnSuggestSettings,
+        #[Autowire('%env(bool:OPENAI_WUERTH_DEBUG)%')]
+        private readonly bool $wuerthAiDebug = false,
     ) {
     }
 
@@ -327,6 +330,13 @@ final class PartController extends AbstractController
 
         if ($new_part->getCategory() === null || $new_part->getCategory()->getID() === null) {
             $this->addFlash('warning', t("part.create_from_info_provider.no_category_yet"));
+        }
+
+        if ($providerKey === 'wuerth' && $this->wuerthAiDebug) {
+            $this->addFlash('notice', sprintf(
+                'Wuerth AI debug: category path = %s',
+                is_string($dto->category) && $dto->category !== '' ? $dto->category : 'none'
+            ));
         }
 
         if ($lotAmount !== null || $lotName !== null || $lotUserBarcode !== null) {

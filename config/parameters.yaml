@@ -102,6 +102,7 @@ parameters:
   env(DEFAULT_URI): 'https://partdb.changeme.invalid/'
   env(OPENAI_API_KEY): ''
   env(OPENAI_WUERTH_ENRICH_MODEL): 'gpt-5.4-mini'
+  env(OPENAI_WUERTH_DEBUG): 0
 
   env(SAML_ROLE_MAPPING): '{}'
 

@@ -40,27 +40,34 @@ final readonly class WuerthAIEnrichmentService
         private string $apiKey = '',
         #[Autowire('%env(string:OPENAI_WUERTH_ENRICH_MODEL)%')]
         private string $model = 'gpt-5.4-mini',
+        #[Autowire('%env(bool:OPENAI_WUERTH_DEBUG)%')]
+        private bool $debug = false,
     ) {
     }
 
     public function enrichPartDetail(PartDetailDTO $detail): PartDetailDTO
     {
         if ($this->apiKey === '') {
+            $this->logDebug('Wuerth AI enrichment skipped: OPENAI_API_KEY is empty');
             return $detail;
         }
 
         try {
             $enrichment = $this->requestEnrichment($detail, $this->getSelectableCategoryPaths());
             if (!is_array($enrichment)) {
+                $this->logDebug('Wuerth AI enrichment returned no usable enrichment payload');
                 return $detail;
             }
+
+            $resolvedCategory = $this->resolveCategoryPath($enrichment);
+            $this->logDebug('Wuerth AI enrichment resolved category: ' . ($resolvedCategory ?? 'none'));
 
             return new PartDetailDTO(
                 provider_key: $detail->provider_key,
                 provider_id: $detail->provider_id,
                 name: $this->cleanText($enrichment['normalized_name'] ?? null) ?? $detail->name,
                 description: $this->cleanText($enrichment['normalized_description'] ?? null) ?? $detail->description,
-                category: $this->resolveCategoryPath($enrichment),
+                category: $resolvedCategory,
                 manufacturer: $this->cleanText($enrichment['manufacturer'] ?? null) ?? $detail->manufacturer,
                 mpn: $this->cleanText($enrichment['mpn'] ?? null) ?? $detail->mpn,
                 preview_image_url: $detail->preview_image_url,
@@ -89,6 +96,8 @@ final readonly class WuerthAIEnrichmentService
      */
     private function requestEnrichment(PartDetailDTO $detail, array $categoryPaths): ?array
     {
+        $this->logDebug('Wuerth AI enrichment started for ' . ($detail->gtin ?? 'unknown'));
+
         $response = $this->client->request('POST', self::OPENAI_URL, [
             'headers' => [
                 'Authorization' => 'Bearer ' . $this->apiKey,
@@ -97,10 +106,14 @@ final readonly class WuerthAIEnrichmentService
             'json' => [
                 'model' => $this->model,
                 'instructions' => implode("\n", [
-                    'You normalize Wuerth product imports for an electronics and workshop inventory.',
-                    'Extract clean technical data from the raw product name and description.',
-                    'Prefer an existing category path when it clearly fits.',
-                    'Only suggest a new category path if no existing path fits well.',
+                    'Please reply in JSON format only.',
+                    'Create a fitting JSON object that can be used in the controller to enrich the information for Part-DB.',
+                    'Use the provided name, description, and existing categories.',
+                    'If no category fits, add a new category path.',
+                    'Create a list of attributes for Part-DB from all attributes you can derive from the provided name and description.',
+                    'Prefer an existing category path if it clearly fits.',
+                    'For screws and fasteners, extract metric thread size, length in mm, drive type, head type, material, and finish whenever possible.',
+                    'Use concise normalized technical wording.',
                     'Return only valid JSON matching the schema.',
                 ]),
                 'input' => [[
@@ -111,8 +124,9 @@ final readonly class WuerthAIEnrichmentService
                             'product' => [
                                 'ean' => $detail->gtin,
                                 'supplier_part_number' => $detail->vendor_infos[0]->order_number ?? null,
-                                'raw_name' => $detail->name,
-                                'raw_description' => $detail->description,
+                                'name' => $detail->name,
+                                'description' => $detail->description,
+                                'existing_notes' => $detail->notes,
                             ],
                             'existing_category_paths' => $categoryPaths,
                         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
@@ -161,15 +175,34 @@ final readonly class WuerthAIEnrichmentService
             ],
         ]);
 
-        $data = $response->toArray(false);
-        $text = $data['output'][0]['content'][0]['text'] ?? $data['output_text'] ?? null;
+        $statusCode = $response->getStatusCode();
+        $rawContent = $response->getContent(false);
+
+        $this->logDebug('Wuerth AI request sent');
+        $this->logDebug('Wuerth AI response status: ' . $statusCode);
+        $this->logDebug('Wuerth AI raw response: ' . $this->truncateForLog($rawContent));
+
+        $data = json_decode($rawContent, true);
+        if (!is_array($data)) {
+            $this->logDebug('Wuerth AI response JSON decode failed');
+            return null;
+        }
+
+        $text = $this->extractTextFromResponse($data);
         if (!is_string($text) || $text === '') {
+            $this->logDebug('Wuerth AI no text in response');
             return null;
         }
 
         $decoded = json_decode($text, true);
+        $this->logDebug('Wuerth AI extracted text: ' . $this->truncateForLog($text));
 
-        return is_array($decoded) ? $decoded : null;
+        if (!is_array($decoded)) {
+            $this->logDebug('Wuerth AI extracted text is not valid JSON');
+            return null;
+        }
+
+        return $decoded;
     }
 
     /**
@@ -278,5 +311,64 @@ final readonly class WuerthAIEnrichmentService
         $value = trim(preg_replace('/\s+/', ' ', $value) ?? '');
 
         return $value !== '' ? $value : null;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function extractTextFromResponse(array $data): ?string
+    {
+        if (isset($data['output_text']) && is_string($data['output_text']) && $data['output_text'] !== '') {
+            return $data['output_text'];
+        }
+
+        $output = $data['output'] ?? null;
+        if (!is_array($output)) {
+            return null;
+        }
+
+        foreach ($output as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $content = $item['content'] ?? null;
+            if (!is_array($content)) {
+                continue;
+            }
+
+            foreach ($content as $contentItem) {
+                if (!is_array($contentItem)) {
+                    continue;
+                }
+
+                $text = $contentItem['text'] ?? null;
+                if (is_string($text) && $text !== '') {
+                    return $text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function truncateForLog(string $value, int $limit = 2000): string
+    {
+        $value = trim(preg_replace('/\s+/', ' ', $value) ?? '');
+
+        if (strlen($value) <= $limit) {
+            return $value;
+        }
+
+        return substr($value, 0, $limit) . '...';
+    }
+
+    private function logDebug(string $message): void
+    {
+        if (!$this->debug) {
+            return;
+        }
+
+        error_log($message);
     }
 }
