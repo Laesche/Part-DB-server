@@ -318,6 +318,13 @@ final class PartController extends AbstractController
 
         $new_part = $infoRetriever->dtoToPart($dto);
 
+        if ($new_part->getCategory() === null && is_string($dto->category) && str_contains($dto->category, '->')) {
+            $new_part->setCategory($this->findOrCreateCategoryPath($dto->category));
+            if ($new_part->getCategory()?->getID() === null) {
+                $this->em->flush();
+            }
+        }
+
         if ($new_part->getCategory() === null || $new_part->getCategory()->getID() === null) {
             $this->addFlash('warning', t("part.create_from_info_provider.no_category_yet"));
         }
@@ -336,6 +343,44 @@ final class PartController extends AbstractController
         return $this->renderPartForm('new', $request, $new_part, [
             'info_provider_dto' => $dto,
         ]);
+    }
+
+    private function findOrCreateCategoryPath(string $path): Category
+    {
+        $segments = preg_split('/\s*->\s*/', trim($path)) ?: [];
+        $segments = array_values(array_filter(array_map(
+            static fn (string $segment): string => trim($segment),
+            $segments
+        ), static fn (string $segment): bool => $segment !== ''));
+
+        $parent = null;
+        $current = null;
+
+        foreach ($segments as $segment) {
+            $found = $this->em->getRepository(Category::class)->findOneBy([
+                'name' => $segment,
+                'parent' => $parent,
+            ]);
+
+            if ($found instanceof Category) {
+                $current = $found;
+                $parent = $found;
+                continue;
+            }
+
+            $current = new Category();
+            $current->setName($segment);
+            $current->setAlternativeNames($segment);
+            $current->setParent($parent);
+            $this->em->persist($current);
+            $parent = $current;
+        }
+
+        if (!$current instanceof Category) {
+            throw new \RuntimeException('Could not create category path.');
+        }
+
+        return $current;
     }
 
     #[Route('/{target}/merge/{other}', name: 'part_merge')]

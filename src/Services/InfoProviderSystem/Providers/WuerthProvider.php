@@ -25,13 +25,17 @@ namespace App\Services\InfoProviderSystem\Providers;
 use App\Services\InfoProviderSystem\DTOs\PartDetailDTO;
 use App\Services\InfoProviderSystem\DTOs\PurchaseInfoDTO;
 use App\Services\InfoProviderSystem\DTOs\SearchResultDTO;
+use App\Services\InfoProviderSystem\WuerthAIEnrichmentService;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final class WuerthProvider implements InfoProviderInterface
 {
     private const SEARCH_URL = 'https://eshop.wuerth.de/is-bin/INTERSHOP.enfinity/WFS/1401-B1-Site/de_DE/-/EUR/ViewParametricSearch-Suggest';
 
-    public function __construct(private readonly HttpClientInterface $client)
+    public function __construct(
+        private readonly HttpClientInterface $client,
+        private readonly ?WuerthAIEnrichmentService $aiEnrichmentService = null,
+    )
     {
     }
 
@@ -71,7 +75,9 @@ final class WuerthProvider implements InfoProviderInterface
             throw new \RuntimeException(sprintf('No Wuerth product found for EAN "%s".', $id));
         }
 
-        return $this->mapProductToDetail($id, $product);
+        $detail = $this->mapProductToDetail($id, $product);
+
+        return $this->aiEnrichmentService?->enrichPartDetail($detail) ?? $detail;
     }
 
     public function getCapabilities(): array
