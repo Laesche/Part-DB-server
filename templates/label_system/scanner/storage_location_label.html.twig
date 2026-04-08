@@ -5,13 +5,13 @@
 {% endblock %}
 
 {% block card_content %}
-    <div class="row justify-content-center">
+    <div class="row justify-content-center" {{ stimulus_controller('pages/storage-location-label') }}>
         <div class="col-lg-6">
             <p class="text-muted mb-4">
                 Create a storage location, generate its QR label, and print it immediately.
             </p>
 
-            <form method="post" data-turbo="false" target="partdb-phomymo">
+            <form method="post" data-turbo="false" target="partdb-phomymo" data-action="submit->pages--storage-location-label#submit">
                 <input type="hidden" name="_csrf_token" value="{{ csrfToken }}">
 
                 <div class="mb-3">

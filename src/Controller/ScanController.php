@@ -443,7 +443,7 @@ class ScanController extends AbstractController
     }
 
     #[Route(path: '/quick-add/storage-lookup', name: 'scan_quick_add_storage_lookup', methods: ['POST'])]
-    public function quickAddStorageLookup(Request $request): JsonResponse
+    public function quickAddStorageLookup(Request $request, EntityManagerInterface $em): JsonResponse
     {
         $this->denyAccessUnlessGranted('@tools.label_scanner');
         $this->denyAccessUnlessGranted('@storelocations.read');
@@ -455,6 +455,15 @@ class ScanController extends AbstractController
         $input = trim((string) ($payload['input'] ?? ''));
         if ($input === '') {
             return $this->json(['ok' => false, 'message' => 'No storage barcode input given.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $storageLocation = $this->resolveStorageLocationFromDirectUrl($input, $request, $em);
+        if ($storageLocation instanceof StorageLocation) {
+            return $this->json([
+                'ok' => true,
+                'storageLocationId' => $storageLocation->getID(),
+                'storageLocationName' => $storageLocation->getFullPath(),
+            ]);
         }
 
         try {
@@ -703,6 +712,17 @@ class ScanController extends AbstractController
             }
 
             return $this->allocatePartLotToStorageLocation($existingLot, $currentLocation, $validator, $em);
+        }
+
+        $directStorageLocation = $this->resolveStorageLocationFromDirectUrl($input, $request, $em);
+        if ($directStorageLocation instanceof StorageLocation) {
+            return $this->json([
+                'ok' => true,
+                'mode' => 'storage',
+                'storageLocationId' => $directStorageLocation->getID(),
+                'storageLocationName' => $directStorageLocation->getFullPath(),
+                'message' => sprintf('Current storage location set to %s.', $directStorageLocation->getFullPath()),
+            ]);
         }
 
         try {
@@ -1087,6 +1107,61 @@ class ScanController extends AbstractController
         }
 
         return null;
+    }
+
+    private function resolveStorageLocationFromDirectUrl(
+        string $input,
+        Request $request,
+        EntityManagerInterface $em,
+    ): ?StorageLocation {
+        $candidate = trim($input);
+        if ($candidate === '') {
+            return null;
+        }
+
+        if (str_starts_with($candidate, '/')) {
+            $candidate = $request->getSchemeAndHttpHost() . $candidate;
+        }
+
+        $parts = parse_url($candidate);
+        if (!is_array($parts)) {
+            return null;
+        }
+
+        $path = (string) ($parts['path'] ?? '');
+        if ($path === '') {
+            return null;
+        }
+
+        $normalizedPath = rtrim($path, '/');
+        $validPaths = [
+            rtrim($this->generateUrl('parts_show_all'), '/'),
+        ];
+
+        if (!in_array($normalizedPath, $validPaths, true)) {
+            return null;
+        }
+
+        $query = (string) ($parts['query'] ?? '');
+        if ($query === '') {
+            return null;
+        }
+
+        parse_str($query, $queryParams);
+        $locationValue = $queryParams['part_filter']['storelocation']['value'] ?? null;
+        $operator = $queryParams['part_filter']['storelocation']['operator'] ?? null;
+
+        if ((string) $operator !== '=' || !is_scalar($locationValue)) {
+            return null;
+        }
+
+        $locationId = (int) $locationValue;
+        if ($locationId <= 0) {
+            return null;
+        }
+
+        $location = $em->getRepository(StorageLocation::class)->find($locationId);
+        return $location instanceof StorageLocation ? $location : null;
     }
 
     private function normalizeCategoryPath(string $path): ?string

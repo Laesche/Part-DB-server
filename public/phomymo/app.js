@@ -7000,9 +7000,7 @@ function decodeAutoLabelPayload(encoded) {
   }
 }
 
-function applyAutoLabelFromQuery() {
-  const params = new URLSearchParams(window.location.search);
-  const payload = decodeAutoLabelPayload(params.get('autolabel'));
+function applyAutoLabelPayload(payload) {
   if (!payload || !state.renderer) {
     return false;
   }
@@ -7077,7 +7075,7 @@ function applyAutoLabelFromQuery() {
     }
 
     detectTemplateFields();
-    setStatus('Auto label loaded. Connect and click Print.');
+    setStatus(state.transport?.isConnected?.() ? 'Auto label loaded. Ready to print.' : 'Auto label loaded. Connect and click Print.');
     return true;
   }
 
@@ -7117,7 +7115,46 @@ function applyAutoLabelFromQuery() {
   state.elements.push(barcodeElement);
 
   detectTemplateFields();
-  setStatus('Auto label loaded. Connect and click Print.');
+  setStatus(state.transport?.isConnected?.() ? 'Auto label loaded. Ready to print.' : 'Auto label loaded. Connect and click Print.');
+  return true;
+}
+
+function applyAutoLabelFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const payload = decodeAutoLabelPayload(params.get('autolabel'));
+  return applyAutoLabelPayload(payload);
+}
+
+function updateQueryForAutoLabel(encoded, autoprint = false) {
+  const url = new URL(window.location.href);
+  if (encoded) {
+    url.searchParams.set('autolabel', encoded);
+  } else {
+    url.searchParams.delete('autolabel');
+  }
+
+  if (autoprint) {
+    url.searchParams.set('autoprint', '1');
+  } else {
+    url.searchParams.delete('autoprint');
+  }
+
+  window.history.replaceState({}, '', url);
+}
+
+async function loadIncomingAutoLabel(encoded, autoprint = false) {
+  const payload = decodeAutoLabelPayload(encoded);
+  if (!applyAutoLabelPayload(payload)) {
+    return false;
+  }
+
+  render();
+  updateQueryForAutoLabel(encoded, autoprint);
+
+  if (autoprint) {
+    await tryAutoPrintIfAlreadyConnected();
+  }
+
   return true;
 }
 
@@ -8291,6 +8328,22 @@ function init() {
 
   // Optional prefill via ?autolabel=... (base64url JSON from Part-DB quick add)
   applyAutoLabelFromQuery();
+
+  window.phomymoLoadAutoLabel = (encoded, autoprint = false) => loadIncomingAutoLabel(encoded, autoprint);
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) {
+      return;
+    }
+
+    const data = event.data || {};
+    if (data?.type !== 'partdb-phomymo-load') {
+      return;
+    }
+
+    loadIncomingAutoLabel((data.autolabel || '').toString(), !!data.autoprint).catch((e) => {
+      console.warn('Dynamic auto-label load failed:', e?.message || e);
+    });
+  });
 
   // Initial render
   render();

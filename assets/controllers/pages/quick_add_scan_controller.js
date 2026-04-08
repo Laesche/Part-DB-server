@@ -352,13 +352,48 @@ export default class extends Controller {
     }
 
     _openPhomymoTab(url) {
-        const phomymoTab = window.open(url, this.constructor.phomymoTabName);
-        if (phomymoTab) {
+        const phomymoTab = window.open("", this.constructor.phomymoTabName);
+        if (!phomymoTab) {
+            window.location.href = url;
+            return;
+        }
+
+        if (this._sendLabelToExistingPhomymoTab(phomymoTab, url)) {
             phomymoTab.focus();
             return;
         }
 
-        window.location.href = url;
+        phomymoTab.location.href = url;
+        phomymoTab.focus();
+    }
+
+    _sendLabelToExistingPhomymoTab(phomymoTab, url) {
+        try {
+            const tabLocation = phomymoTab.location;
+            const isPhomymoTab = tabLocation?.origin === window.location.origin
+                && tabLocation?.pathname?.includes("/phomymo/");
+            if (!isPhomymoTab) {
+                return false;
+            }
+
+            const targetUrl = new URL(url, window.location.origin);
+            const encoded = targetUrl.searchParams.get("autolabel");
+            const autoprintValue = String(targetUrl.searchParams.get("autoprint") ?? "").toLowerCase();
+            const autoprint = autoprintValue === "1" || autoprintValue === "true" || autoprintValue === "yes";
+
+            if (!encoded) {
+                return false;
+            }
+
+            if (typeof phomymoTab.phomymoLoadAutoLabel === "function") {
+                phomymoTab.phomymoLoadAutoLabel(encoded, autoprint);
+                return true;
+            }
+        } catch (_) {
+            return false;
+        }
+
+        return false;
     }
 
     _clearPendingTokens() {
