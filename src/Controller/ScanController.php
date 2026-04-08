@@ -54,6 +54,7 @@ use App\Services\LabelSystem\BarcodeScanner\BarcodeSourceType;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultHandler;
 use App\Services\LabelSystem\BarcodeScanner\EIGP114BarcodeScanResult;
 use App\Services\LabelSystem\BarcodeScanner\LocalBarcodeScanResult;
+use App\Services\Parts\PartLotWithdrawAddHelper;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityNotFoundException;
@@ -282,6 +283,20 @@ class ScanController extends AbstractController
         $this->denyAccessUnlessGranted('create', new Part());
 
         return $this->render('label_system/scanner/storage_location_allocator.html.twig', [
+            'csrfToken' => $csrfTokenManager->getToken('scan_quick_add_confirm')->getValue(),
+        ]);
+    }
+
+    #[Route(path: '/stock-terminal', name: 'scan_stock_terminal', methods: ['GET'])]
+    public function stockTerminalPage(CsrfTokenManagerInterface $csrfTokenManager): Response
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@parts.read');
+        $this->denyAccessUnlessGranted('@storelocations.read');
+        $this->denyAccessUnlessGranted('@info_providers.create_parts');
+        $this->denyAccessUnlessGranted('create', new Part());
+
+        return $this->render('label_system/scanner/stock_terminal.html.twig', [
             'csrfToken' => $csrfTokenManager->getToken('scan_quick_add_confirm')->getValue(),
         ]);
     }
@@ -853,6 +868,379 @@ class ScanController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/stock-terminal/scan', name: 'scan_stock_terminal_scan', methods: ['POST'])]
+    public function stockTerminalScan(
+        Request $request,
+        PartInfoRetriever $infoRetriever,
+        ValidatorInterface $validator,
+        EntityManagerInterface $em,
+    ): JsonResponse {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@parts.read');
+        $this->denyAccessUnlessGranted('@storelocations.read');
+        $this->denyAccessUnlessGranted('@info_providers.create_parts');
+        $this->denyAccessUnlessGranted('create', new Part());
+
+        $payload = json_decode($request->getContent(), true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $csrf = (string) ($payload['_csrf_token'] ?? '');
+        if (!$this->isCsrfTokenValid('scan_quick_add_confirm', $csrf)) {
+            return $this->json(['ok' => false, 'message' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
+        $input = trim((string) ($payload['input'] ?? ''));
+        if ($input === '') {
+            return $this->json(['ok' => false, 'message' => 'No barcode input given.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $currentLocationId = (int) ($payload['storageLocationId'] ?? 0);
+        $currentLocation = $currentLocationId > 0
+            ? $em->getRepository(StorageLocation::class)->find($currentLocationId)
+            : null;
+
+        $directStorageLocation = $this->resolveStorageLocationFromDirectUrl($input, $request, $em);
+        if ($directStorageLocation instanceof StorageLocation) {
+            $this->denyAccessUnlessGranted('read', $directStorageLocation);
+
+            return $this->json([
+                'ok' => true,
+                'mode' => 'storage',
+                'message' => sprintf('Storage location %s scanned.', $directStorageLocation->getFullPath()),
+                'storageLocation' => [
+                    'id' => $directStorageLocation->getID(),
+                    'name' => $directStorageLocation->getName(),
+                    'fullPath' => $directStorageLocation->getFullPath(),
+                    'partsListUrl' => $this->buildStorageLocationPartsListUrl($directStorageLocation),
+                ],
+            ]);
+        }
+
+        $existingLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $input]);
+        if ($existingLot instanceof PartLot) {
+            $this->denyAccessUnlessGranted('read', $existingLot);
+
+            if ($currentLocation instanceof StorageLocation) {
+                $allocationError = $this->movePartLotToStorageLocation($existingLot, $currentLocation, $validator, $em);
+                if ($allocationError !== null) {
+                    return $this->json(['ok' => false, 'message' => $allocationError], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+            }
+
+            return $this->json($this->buildStockTerminalPartResponse(
+                $existingLot->getPart() ?? throw new \RuntimeException('Part lot without part encountered.'),
+                $existingLot,
+                $currentLocation instanceof StorageLocation ? $currentLocation : null,
+                $currentLocation instanceof StorageLocation
+                    ? sprintf('Allocated %s to %s.', $existingLot->getPart()?->getName() ?? ('Lot #' . $existingLot->getID()), $currentLocation->getFullPath())
+                    : 'Part scanned.'
+            ));
+        }
+
+        try {
+            $scan = $this->barcodeNormalizer->scanBarcodeContent($input);
+            $entity = $this->resultHandler->resolveEntity($scan);
+        } catch (\Throwable) {
+            return $this->json(['ok' => false, 'message' => 'Unknown or unsupported barcode format.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if ($entity instanceof StorageLocation) {
+            $this->denyAccessUnlessGranted('read', $entity);
+
+            return $this->json([
+                'ok' => true,
+                'mode' => 'storage',
+                'message' => sprintf('Storage location %s scanned.', $entity->getFullPath()),
+                'storageLocation' => [
+                    'id' => $entity->getID(),
+                    'name' => $entity->getName(),
+                    'fullPath' => $entity->getFullPath(),
+                    'partsListUrl' => $this->buildStorageLocationPartsListUrl($entity),
+                ],
+            ]);
+        }
+
+        if ($entity instanceof PartLot) {
+            $this->denyAccessUnlessGranted('read', $entity);
+
+            if ($currentLocation instanceof StorageLocation) {
+                $allocationError = $this->movePartLotToStorageLocation($entity, $currentLocation, $validator, $em);
+                if ($allocationError !== null) {
+                    return $this->json(['ok' => false, 'message' => $allocationError], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+            }
+
+            return $this->json($this->buildStockTerminalPartResponse(
+                $entity->getPart() ?? throw new \RuntimeException('Part lot without part encountered.'),
+                $entity,
+                $currentLocation instanceof StorageLocation ? $currentLocation : null,
+                $currentLocation instanceof StorageLocation
+                    ? sprintf('Allocated %s to %s.', $entity->getPart()?->getName() ?? ('Lot #' . $entity->getID()), $currentLocation->getFullPath())
+                    : 'Part scanned.'
+            ));
+        }
+
+        if ($entity instanceof Part) {
+            $this->denyAccessUnlessGranted('read', $entity);
+
+            $preferredLot = null;
+            if ($currentLocation instanceof StorageLocation) {
+                $preferredLot = $this->findPreferredPartLot($entity, null, $currentLocation, true);
+                if (!$preferredLot instanceof PartLot) {
+                    return $this->json(['ok' => false, 'message' => sprintf('Part %s has multiple lots. Scan a specific lot label instead.', $entity->getName())], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $allocationError = $this->movePartLotToStorageLocation($preferredLot, $currentLocation, $validator, $em);
+                if ($allocationError !== null) {
+                    return $this->json(['ok' => false, 'message' => $allocationError], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+            }
+
+            return $this->json($this->buildStockTerminalPartResponse(
+                $entity,
+                $preferredLot,
+                $currentLocation instanceof StorageLocation ? $currentLocation : null,
+                $currentLocation instanceof StorageLocation && $preferredLot instanceof PartLot
+                    ? sprintf('Allocated %s to %s.', $entity->getName(), $currentLocation->getFullPath())
+                    : 'Part scanned.'
+            ));
+        }
+
+        $createInfos = null;
+        try {
+            $createInfos = $this->resultHandler->getCreateInfos($scan);
+        } catch (\Throwable) {
+            $createInfos = null;
+        }
+
+        $isEigp114 = $scan instanceof EIGP114BarcodeScanResult;
+        if ($createInfos === null) {
+            return $this->json(['ok' => false, 'message' => 'This barcode cannot be used here.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $derivedLotBarcode = trim((string) ($createInfos['lotUserBarcode'] ?? ''));
+        if ($derivedLotBarcode !== '') {
+            $existingDerivedLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $derivedLotBarcode]);
+            if ($existingDerivedLot instanceof PartLot) {
+                $this->denyAccessUnlessGranted('read', $existingDerivedLot);
+
+                if ($currentLocation instanceof StorageLocation) {
+                    $allocationError = $this->movePartLotToStorageLocation($existingDerivedLot, $currentLocation, $validator, $em);
+                    if ($allocationError !== null) {
+                        return $this->json(['ok' => false, 'message' => $allocationError], Response::HTTP_UNPROCESSABLE_ENTITY);
+                    }
+                }
+
+                return $this->json($this->buildStockTerminalPartResponse(
+                    $existingDerivedLot->getPart() ?? throw new \RuntimeException('Part lot without part encountered.'),
+                    $existingDerivedLot,
+                    $currentLocation instanceof StorageLocation ? $currentLocation : null,
+                    $currentLocation instanceof StorageLocation
+                        ? sprintf('Allocated %s to %s.', $existingDerivedLot->getPart()?->getName() ?? ('Lot #' . $existingDerivedLot->getID()), $currentLocation->getFullPath())
+                        : 'Part scanned.'
+                ));
+            }
+        }
+
+        $dto = $this->fetchProviderDto($infoRetriever, $createInfos, $isEigp114);
+        if ($dto === null) {
+            return $this->json([
+                'ok' => false,
+                'message' => $isEigp114
+                    ? 'Provider information is not available yet after waiting 20 seconds. Please scan again.'
+                    : 'Failed to load provider details for this barcode.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        try {
+            $part = $infoRetriever->dtoToPart($dto);
+        } catch (\Throwable) {
+            return $this->json(['ok' => false, 'message' => 'Could not create part from provider data.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $autoCategory = $part->getCategory();
+        if (!$autoCategory instanceof Category || $autoCategory->isNotSelectable()) {
+            $providerCategoryPath = $this->normalizeCategoryPath((string) ($dto->category ?? ''));
+            if ($providerCategoryPath !== null) {
+                $part->setCategory($this->findOrCreateCategoryPath($em, $providerCategoryPath));
+            } else {
+                $fallbackCategory = $this->findFirstSelectableCategory($em);
+                if ($fallbackCategory instanceof Category) {
+                    $part->setCategory($fallbackCategory);
+                }
+            }
+        }
+
+        $partLot = new PartLot();
+        $partLot->setAmount(isset($createInfos['lotAmount']) ? (float) $createInfos['lotAmount'] : 1.0);
+        $partLot->setDescription(trim((string) ($createInfos['lotName'] ?? '')));
+        $partLot->setUserBarcode($derivedLotBarcode !== '' ? $derivedLotBarcode : null);
+        if ($currentLocation instanceof StorageLocation) {
+            $partLot->setStorageLocation($currentLocation);
+        }
+        $part->addPartLot($partLot);
+
+        $violations = $validator->validate($part);
+        if (count($violations) > 0) {
+            $messages = [];
+            foreach ($violations as $violation) {
+                $messages[] = trim((string) $violation->getMessage());
+            }
+
+            return $this->json([
+                'ok' => false,
+                'message' => implode(' ', array_filter($messages)),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        try {
+            $em->persist($part);
+            $em->flush();
+        } catch (\Throwable $e) {
+            $message = 'Could not save the part. Please review the selected category and storage location.';
+            if ($derivedLotBarcode !== '' && $this->containsUniqueConstraintViolation($e)) {
+                $message = 'Could not save the part. The scanned lot barcode already exists.';
+            } else {
+                $rootMessage = $this->getRootExceptionMessage($e);
+                if ($rootMessage !== null) {
+                    $message = 'Could not save the part. ' . $rootMessage;
+                }
+            }
+
+            return $this->json([
+                'ok' => false,
+                'message' => $message,
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return $this->json($this->buildStockTerminalPartResponse(
+            $part,
+            $partLot,
+            $currentLocation instanceof StorageLocation ? $currentLocation : null,
+            sprintf('Created %s%s.', $part->getName(), $currentLocation instanceof StorageLocation ? ' and assigned it to ' . $currentLocation->getFullPath() : ''),
+            true
+        ));
+    }
+
+    #[Route(path: '/stock-terminal/stock', name: 'scan_stock_terminal_stock', methods: ['POST'])]
+    public function stockTerminalStockAdjust(
+        Request $request,
+        EntityManagerInterface $em,
+        ValidatorInterface $validator,
+        PartLotWithdrawAddHelper $withdrawAddHelper,
+    ): JsonResponse {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('@parts.read');
+
+        $payload = json_decode($request->getContent(), true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $csrf = (string) ($payload['_csrf_token'] ?? '');
+        if (!$this->isCsrfTokenValid('scan_quick_add_confirm', $csrf)) {
+            return $this->json(['ok' => false, 'message' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
+        $partId = (int) ($payload['partId'] ?? 0);
+        $part = $partId > 0 ? $em->getRepository(Part::class)->find($partId) : null;
+        if (!$part instanceof Part) {
+            return $this->json(['ok' => false, 'message' => 'Part not found.'], Response::HTTP_NOT_FOUND);
+        }
+        $this->denyAccessUnlessGranted('read', $part);
+
+        $lotId = (int) ($payload['lotId'] ?? 0);
+        $contextLocationId = (int) ($payload['storageLocationId'] ?? 0);
+        $contextLocation = $contextLocationId > 0 ? $em->getRepository(StorageLocation::class)->find($contextLocationId) : null;
+        $action = trim((string) ($payload['action'] ?? ''));
+        $amount = (float) ($payload['amount'] ?? 0);
+
+        if ($amount <= 0) {
+            return $this->json(['ok' => false, 'message' => 'Amount must be greater than 0.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $lot = $lotId > 0 ? $em->getRepository(PartLot::class)->find($lotId) : null;
+        if ($lot instanceof PartLot && $lot->getPart() !== $part) {
+            return $this->json(['ok' => false, 'message' => 'Part lot does not belong to the part.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if (!$lot instanceof PartLot) {
+            $lot = $this->findPreferredPartLot($part, null, $contextLocation instanceof StorageLocation ? $contextLocation : null, $action === 'add');
+        }
+
+        if (!$lot instanceof PartLot) {
+            return $this->json(['ok' => false, 'message' => 'Could not determine which lot to change. Scan a specific lot label or enter add-to-location mode.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if ($lot->getPart() !== $part) {
+            $part->addPartLot($lot);
+            $em->persist($lot);
+        }
+
+        if ($contextLocation instanceof StorageLocation && !$lot->getStorageLocation() instanceof StorageLocation) {
+            $lot->setStorageLocation($contextLocation);
+        }
+
+        $violations = $validator->validate($lot);
+        if (count($violations) > 0) {
+            $messages = [];
+            foreach ($violations as $violation) {
+                $messages[] = trim((string) $violation->getMessage());
+            }
+
+            return $this->json([
+                'ok' => false,
+                'message' => implode(' ', array_filter($messages)),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        try {
+            if ($action === 'add') {
+                $this->denyAccessUnlessGranted('add', $lot);
+                $withdrawAddHelper->add($lot, $amount);
+            } elseif ($action === 'reduce') {
+                $this->denyAccessUnlessGranted('withdraw', $lot);
+                $withdrawAddHelper->withdraw($lot, $amount);
+            } else {
+                return $this->json(['ok' => false, 'message' => 'Unknown stock action.'], Response::HTTP_BAD_REQUEST);
+            }
+
+            $em->flush();
+        } catch (\Throwable $e) {
+            $rootMessage = $this->getRootExceptionMessage($e);
+            return $this->json([
+                'ok' => false,
+                'message' => $rootMessage !== null ? 'Could not change stock. ' . $rootMessage : 'Could not change stock.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        return $this->json($this->buildStockTerminalPartResponse(
+            $part,
+            $lot,
+            $contextLocation instanceof StorageLocation ? $contextLocation : null,
+            $action === 'add' ? 'Stock added successfully.' : 'Stock reduced successfully.'
+        ));
+    }
+
+    #[Route(path: '/stock-terminal/part/{id}', name: 'scan_stock_terminal_part', methods: ['GET'])]
+    public function stockTerminalPartDetails(Part $part, Request $request, EntityManagerInterface $em): JsonResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('read', $part);
+
+        $contextLocationId = $request->query->getInt('storageLocationId', 0);
+        $contextLocation = $contextLocationId > 0 ? $em->getRepository(StorageLocation::class)->find($contextLocationId) : null;
+
+        return $this->json($this->buildStockTerminalPartResponse(
+            $part,
+            null,
+            $contextLocation instanceof StorageLocation ? $contextLocation : null,
+            'Part opened from search.'
+        ));
+    }
+
     /**
      * Builds a URL for creating a new part based on the barcode data, handles exceptions and shows user-friendly error messages if the provider is not active or if there is an error during URL generation.
      * @param BarcodeScanResultInterface $scanResult
@@ -948,6 +1336,149 @@ class ScanController extends AbstractController
         } while ($isEigp114);
 
         return $dto;
+    }
+
+    private function buildStockTerminalPartResponse(
+        Part $part,
+        ?PartLot $preferredLot = null,
+        ?StorageLocation $contextLocation = null,
+        string $message = 'Part scanned.',
+        bool $newlyCreated = false,
+    ): array {
+        $this->denyAccessUnlessGranted('read', $part);
+
+        $lot = $this->findPreferredPartLot($part, $preferredLot, $contextLocation, false);
+
+        $locations = [];
+        foreach ($part->getPartLots() as $partLot) {
+            if (!$partLot instanceof PartLot) {
+                continue;
+            }
+
+            $location = $partLot->getStorageLocation();
+            if ($location instanceof StorageLocation) {
+                $locations[$location->getID()] = $location->getFullPath();
+            }
+        }
+        $locationNames = array_values($locations);
+
+        return [
+            'ok' => true,
+            'mode' => 'part',
+            'message' => $message,
+            'part' => [
+                'id' => $part->getID(),
+                'name' => $part->getName(),
+                'category' => $part->getCategory()?->getFullPath() ?? '',
+                'overallStock' => $part->getAmountSum(),
+                'stockUnknown' => $part->isAmountUnknown(),
+                'storageLocation' => $lot?->getStorageLocation()?->getFullPath(),
+                'storageLocations' => $locationNames,
+                'storageLocationsLabel' => count($locationNames) > 0 ? implode(' | ', $locationNames) : 'No storage location assigned',
+                'lotId' => $lot?->getID(),
+                'lotAmount' => $lot?->isInstockUnknown() ? null : $lot?->getAmount(),
+                'lotUnknown' => $lot?->isInstockUnknown() ?? true,
+                'openUrl' => $this->generateUrl('part_info', ['id' => $part->getID()]),
+                'newlyCreated' => $newlyCreated,
+            ],
+        ];
+    }
+
+    private function buildStorageLocationPartsListUrl(StorageLocation $location): string
+    {
+        return $this->generateUrl('parts_show_all', [
+            'part_filter' => [
+                'storelocation' => [
+                    'operator' => '=',
+                    'value' => $location->getID(),
+                ],
+            ],
+        ]);
+    }
+
+    private function findPreferredPartLot(
+        Part $part,
+        ?PartLot $preferredLot = null,
+        ?StorageLocation $contextLocation = null,
+        bool $createIfMissing = false,
+    ): ?PartLot {
+        if ($preferredLot instanceof PartLot && $preferredLot->getPart() === $part) {
+            return $preferredLot;
+        }
+
+        if ($contextLocation instanceof StorageLocation) {
+            $matchingLots = [];
+            foreach ($part->getPartLots() as $partLot) {
+                if ($partLot instanceof PartLot && $partLot->getStorageLocation()?->getID() === $contextLocation->getID()) {
+                    $matchingLots[] = $partLot;
+                }
+            }
+
+            if (count($matchingLots) === 1) {
+                return $matchingLots[0];
+            }
+
+            if (count($matchingLots) > 1) {
+                return null;
+            }
+
+            if ($createIfMissing) {
+                $lot = new PartLot();
+                $lot->setInstockUnknown(false);
+                $lot->setAmount(0.0);
+                $lot->setStorageLocation($contextLocation);
+                $part->addPartLot($lot);
+                return $lot;
+            }
+        }
+
+        if ($part->getPartLots()->count() === 1) {
+            $singleLot = $part->getPartLots()->first();
+            return $singleLot instanceof PartLot ? $singleLot : null;
+        }
+
+        if ($part->getPartLots()->count() === 0 && $createIfMissing) {
+            $lot = new PartLot();
+            $lot->setInstockUnknown(false);
+            $lot->setAmount(0.0);
+            if ($contextLocation instanceof StorageLocation) {
+                $lot->setStorageLocation($contextLocation);
+            }
+            $part->addPartLot($lot);
+            return $lot;
+        }
+
+        return null;
+    }
+
+    private function movePartLotToStorageLocation(
+        PartLot $partLot,
+        StorageLocation $storageLocation,
+        ValidatorInterface $validator,
+        EntityManagerInterface $em,
+    ): ?string {
+        $this->denyAccessUnlessGranted('edit', $partLot);
+
+        $partLot->setStorageLocation($storageLocation);
+
+        $violations = $validator->validate($partLot);
+        if (count($violations) > 0) {
+            $messages = [];
+            foreach ($violations as $violation) {
+                $messages[] = trim((string) $violation->getMessage());
+            }
+
+            return implode(' ', array_filter($messages));
+        }
+
+        try {
+            $em->flush();
+        } catch (\Throwable $e) {
+            $rootMessage = $this->getRootExceptionMessage($e);
+            return $rootMessage !== null ? 'Could not update storage location. ' . $rootMessage : 'Could not update storage location.';
+        }
+
+        return null;
     }
 
     private function allocatePartToStorageLocation(

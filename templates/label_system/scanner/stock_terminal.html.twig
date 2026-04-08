@@ -1,0 +1,593 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Stock Terminal{% endblock %}
+
+{% block body %}
+    <div class="stock-terminal-shell" {{ stimulus_controller('pages/stock-terminal', {
+        scanUrl: path('scan_stock_terminal_scan'),
+        stockUrl: path('scan_stock_terminal_stock'),
+        partDetailsUrlTemplate: path('scan_stock_terminal_part', {'id': '__ID__'}),
+        searchUrlTemplate: path('typeahead_parts', {'query': '__QUERY__'}),
+        partUrlTemplate: path('part_info', {'id': '__ID__'}),
+        csrfToken: csrfToken
+    }) }}>
+        <div class="stock-terminal-bg stock-terminal-bg--one"></div>
+        <div class="stock-terminal-bg stock-terminal-bg--two"></div>
+
+        <header class="stock-terminal-top">
+            <div class="stock-terminal-toolbar">
+                <button type="button" class="stock-terminal-toolbar__btn" data-action="click->pages--stock-terminal#openSearch" aria-label="Search parts">
+                    <i class="fas fa-search"></i>
+                </button>
+                <button type="button" class="stock-terminal-toolbar__btn" data-action="click->pages--stock-terminal#reopenCameraPicker" aria-label="Change camera">
+                    <i class="fas fa-camera"></i>
+                </button>
+            </div>
+            <div class="stock-terminal-eyebrow">Scanner Terminal</div>
+            <h1 class="stock-terminal-title">Scan parts, storage locations, and stock movements in one fullscreen flow.</h1>
+            <div class="stock-terminal-active d-none" {{ stimulus_target('pages/stock-terminal', 'locationBanner') }}></div>
+            <div class="terminal-status terminal-status--info" {{ stimulus_target('pages/stock-terminal', 'status') }}>
+                Scan a part or storage label.
+            </div>
+        </header>
+
+        <main class="stock-terminal-main">
+            <section class="scanner-stage">
+                <div class="scanner-frame">
+                    <div class="scanner-frame__grid"></div>
+                    <div id="stock-terminal-reader" {{ stimulus_target('pages/stock-terminal', 'reader') }}></div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="stock-terminal-footer">
+            <a class="stock-terminal-brand" href="{{ path('classic_homepage') }}">
+                <span class="stock-terminal-brand__mark"><i class="fa fa-microchip"></i></span>
+                <span class="stock-terminal-brand__text">
+                    <strong>Part-DB</strong>
+                    <span>Open the standard database view</span>
+                </span>
+            </a>
+        </footer>
+
+        <section class="terminal-modal d-none" {{ stimulus_target('pages/stock-terminal', 'cameraModal') }}>
+            <div class="terminal-modal__backdrop"></div>
+            <div class="terminal-modal__card terminal-modal__card--compact">
+                <div class="terminal-modal__eyebrow">Choose Camera</div>
+                <h2 class="terminal-modal__subtitle">Pick the camera to use for scanning. This selection is remembered for later visits.</h2>
+                <div class="terminal-camera-list" {{ stimulus_target('pages/stock-terminal', 'cameraList') }}></div>
+            </div>
+        </section>
+
+        <section class="terminal-modal d-none" {{ stimulus_target('pages/stock-terminal', 'searchModal') }}>
+            <div class="terminal-modal__backdrop" data-action="click->pages--stock-terminal#closeSearch"></div>
+            <div class="terminal-modal__card terminal-modal__card--compact">
+                <button type="button" class="terminal-modal__close" data-action="click->pages--stock-terminal#closeSearch" aria-label="Close">
+                    <i class="fas fa-xmark"></i>
+                </button>
+                <div class="terminal-modal__eyebrow">Part Search</div>
+                <h2 class="terminal-modal__subtitle">Search the database and open a part directly in the scanner terminal.</h2>
+                <input type="search" class="terminal-search-input" placeholder="Search parts..." {{ stimulus_target('pages/stock-terminal', 'searchInput') }} data-action="input->pages--stock-terminal#onSearchInput">
+                <div class="terminal-search-results" {{ stimulus_target('pages/stock-terminal', 'searchResults') }}>
+                    <div class="terminal-search-empty">Type a part name, category, or description.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="terminal-modal d-none" {{ stimulus_target('pages/stock-terminal', 'modal') }}>
+            <div class="terminal-modal__backdrop" data-action="click->pages--stock-terminal#closeModal"></div>
+            <div class="terminal-modal__card">
+                <button type="button" class="terminal-modal__close" data-action="click->pages--stock-terminal#closeModal" aria-label="Close">
+                    <i class="fas fa-xmark"></i>
+                </button>
+
+                <div class="terminal-modal__header">
+                    <div class="terminal-modal__eyebrow" {{ stimulus_target('pages/stock-terminal', 'modalTitle') }}>Part</div>
+                    <h2 class="terminal-modal__subtitle" {{ stimulus_target('pages/stock-terminal', 'modalSubtitle') }}>Inspect stock and book parts in or out.</h2>
+                </div>
+
+                <div {{ stimulus_target('pages/stock-terminal', 'partPanel') }}>
+                    <div class="terminal-data-card">
+                        <div class="terminal-data-card__name" {{ stimulus_target('pages/stock-terminal', 'partName') }}>Part</div>
+                        <div class="terminal-data-card__meta" {{ stimulus_target('pages/stock-terminal', 'partCategory') }}>Category</div>
+                        <div class="terminal-data-grid">
+                            <div class="terminal-metric">
+                                <span class="terminal-metric__label">Overall Stock</span>
+                                <span class="terminal-metric__value" {{ stimulus_target('pages/stock-terminal', 'partStock') }}>0 overall</span>
+                            </div>
+                            <div class="terminal-metric">
+                                <span class="terminal-metric__label">Storage Locations</span>
+                                <span class="terminal-metric__value terminal-metric__value--small" {{ stimulus_target('pages/stock-terminal', 'partLocation') }}>None</span>
+                            </div>
+                            <div class="terminal-metric terminal-metric--wide">
+                                <span class="terminal-metric__label">Selected Lot</span>
+                                <span class="terminal-metric__value terminal-metric__value--small" {{ stimulus_target('pages/stock-terminal', 'partAmount') }}>Unknown</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="terminal-action-row">
+                        <label class="terminal-input-group">
+                            <span>Amount</span>
+                            <input type="number" min="0.0000001" step="any" value="1" {{ stimulus_target('pages/stock-terminal', 'stockAmount') }}>
+                        </label>
+                        <button type="button" class="terminal-button terminal-button--danger" data-action="click->pages--stock-terminal#reduceStock">
+                            <i class="fas fa-minus"></i> Reduce
+                        </button>
+                        <button type="button" class="terminal-button terminal-button--success" data-action="click->pages--stock-terminal#addStock">
+                            <i class="fas fa-plus"></i> Add
+                        </button>
+                    </div>
+
+                    <div class="terminal-secondary-row">
+                        <button type="button" class="terminal-link-button" data-action="click->pages--stock-terminal#openPart">
+                            Open part page
+                        </button>
+                    </div>
+                </div>
+
+                <div class="d-none" {{ stimulus_target('pages/stock-terminal', 'storagePanel') }}>
+                    <div class="terminal-data-card">
+                        <div class="terminal-data-card__name" {{ stimulus_target('pages/stock-terminal', 'storageName') }}>Storage Location</div>
+                        <div class="terminal-data-card__meta">Storage QR detected</div>
+                    </div>
+
+                    <div class="terminal-action-stack">
+                        <button type="button" class="terminal-button terminal-button--secondary" data-action="click->pages--stock-terminal#openStoragePartsList">
+                            Show location part list
+                        </button>
+                        <button type="button" class="terminal-button terminal-button--primary" data-action="click->pages--stock-terminal#activateLocationFlow">
+                            Add parts to this location
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <style>
+        .stock-terminal-shell {
+            min-height: 100vh;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            padding: 1.25rem 1rem 1rem;
+            background:
+                radial-gradient(circle at top left, rgba(255, 210, 122, 0.22), transparent 30%),
+                radial-gradient(circle at bottom right, rgba(0, 153, 122, 0.18), transparent 28%),
+                linear-gradient(160deg, #10261f 0%, #132f29 35%, #091411 100%);
+            color: #f4efe4;
+        }
+
+        .stock-terminal-bg {
+            position: absolute;
+            inset: auto;
+            border-radius: 999px;
+            filter: blur(40px);
+            opacity: 0.35;
+            pointer-events: none;
+        }
+
+        .stock-terminal-bg--one {
+            width: 18rem;
+            height: 18rem;
+            top: -4rem;
+            right: -3rem;
+            background: #f9a03f;
+        }
+
+        .stock-terminal-bg--two {
+            width: 20rem;
+            height: 20rem;
+            bottom: -7rem;
+            left: -6rem;
+            background: #1db89a;
+        }
+
+        .stock-terminal-top,
+        .stock-terminal-main,
+        .stock-terminal-footer {
+            position: relative;
+            z-index: 1;
+        }
+
+        .stock-terminal-top {
+            max-width: 68rem;
+            margin: 0 auto 1rem;
+            width: 100%;
+        }
+
+        .stock-terminal-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.6rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .stock-terminal-toolbar__btn {
+            width: 3rem;
+            height: 3rem;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.08);
+            color: #f6f0df;
+            backdrop-filter: blur(10px);
+        }
+
+        .stock-terminal-eyebrow,
+        .terminal-modal__eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            font-size: 0.72rem;
+            color: #f7bd6c;
+            margin-bottom: 0.5rem;
+        }
+
+        .stock-terminal-title {
+            font-size: clamp(1.5rem, 4vw, 2.6rem);
+            line-height: 1.02;
+            max-width: 18ch;
+            margin: 0 0 0.8rem;
+            font-weight: 700;
+        }
+
+        .stock-terminal-active {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            align-items: center;
+            padding: 0.85rem 1rem;
+            border-radius: 1rem;
+            background: rgba(247, 189, 108, 0.14);
+            border: 1px solid rgba(247, 189, 108, 0.35);
+            margin-bottom: 0.85rem;
+        }
+
+        .terminal-chip {
+            border: 0;
+            border-radius: 999px;
+            padding: 0.5rem 0.85rem;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff5df;
+            font-weight: 600;
+        }
+
+        .terminal-chip--danger {
+            background: #7e2a2a;
+        }
+
+        .terminal-status {
+            border-radius: 1rem;
+            padding: 0.85rem 1rem;
+            border: 1px solid transparent;
+            backdrop-filter: blur(12px);
+        }
+
+        .terminal-status--info {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .terminal-status--success {
+            background: rgba(29, 184, 154, 0.16);
+            border-color: rgba(29, 184, 154, 0.4);
+        }
+
+        .terminal-status--warning {
+            background: rgba(249, 160, 63, 0.16);
+            border-color: rgba(249, 160, 63, 0.4);
+        }
+
+        .terminal-status--danger {
+            background: rgba(196, 64, 64, 0.18);
+            border-color: rgba(196, 64, 64, 0.45);
+        }
+
+        .stock-terminal-main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 0;
+        }
+
+        .scanner-stage {
+            width: 100%;
+            max-width: 70rem;
+        }
+
+        .scanner-frame {
+            position: relative;
+            overflow: hidden;
+            border-radius: 2rem;
+            padding: 1rem;
+            background: rgba(4, 14, 12, 0.56);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+        }
+
+        .scanner-frame__grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 24px 24px;
+            mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.45));
+            pointer-events: none;
+        }
+
+        #stock-terminal-reader {
+            position: relative;
+            z-index: 1;
+            min-height: min(72vh, 48rem);
+        }
+
+        .stock-terminal-footer {
+            display: flex;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .stock-terminal-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.9rem;
+            text-decoration: none;
+            color: #f6f0df;
+            padding: 0.85rem 1rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stock-terminal-brand__mark {
+            width: 2.75rem;
+            height: 2.75rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f7bd6c, #f08a4b);
+            color: #10261f;
+            font-size: 1.15rem;
+        }
+
+        .stock-terminal-brand__text {
+            display: flex;
+            flex-direction: column;
+            font-size: 0.9rem;
+        }
+
+        .stock-terminal-brand__text span {
+            color: rgba(246, 240, 223, 0.76);
+            font-size: 0.78rem;
+        }
+
+        .terminal-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1040;
+        }
+
+        .terminal-modal__backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(6, 10, 9, 0.68);
+            backdrop-filter: blur(10px);
+        }
+
+        .terminal-modal__card {
+            position: relative;
+            width: min(92vw, 36rem);
+            margin: 7vh auto 0;
+            padding: 1.4rem;
+            border-radius: 1.5rem;
+            background: #f6f0e2;
+            color: #1c2a27;
+            box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+        }
+
+        .terminal-modal__card--compact {
+            width: min(92vw, 42rem);
+        }
+
+        .terminal-modal__close {
+            position: absolute;
+            top: 0.9rem;
+            right: 0.9rem;
+            border: 0;
+            background: transparent;
+            color: #485651;
+            font-size: 1.15rem;
+        }
+
+        .terminal-modal__subtitle {
+            margin: 0 2rem 1rem 0;
+            font-size: 1.45rem;
+            line-height: 1.08;
+            font-weight: 700;
+        }
+
+        .terminal-data-card {
+            padding: 1rem;
+            border-radius: 1.2rem;
+            background: linear-gradient(135deg, #fffef9, #e7dfce);
+            margin-bottom: 1rem;
+        }
+
+        .terminal-data-card__name {
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-bottom: 0.35rem;
+        }
+
+        .terminal-data-card__meta {
+            color: #5d6a66;
+            margin-bottom: 0.9rem;
+        }
+
+        .terminal-data-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.8rem;
+        }
+
+        .terminal-metric {
+            padding: 0.8rem 0.9rem;
+            border-radius: 1rem;
+            background: rgba(16, 38, 31, 0.06);
+        }
+
+        .terminal-metric--wide {
+            grid-column: 1 / -1;
+        }
+
+        .terminal-metric__label {
+            display: block;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            color: #68736e;
+            margin-bottom: 0.35rem;
+        }
+
+        .terminal-metric__value {
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+
+        .terminal-metric__value--small {
+            font-size: 0.98rem;
+            line-height: 1.35;
+        }
+
+        .terminal-action-row,
+        .terminal-action-stack {
+            display: grid;
+            gap: 0.8rem;
+        }
+
+        .terminal-action-row {
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            align-items: end;
+        }
+
+        .terminal-input-group {
+            display: grid;
+            gap: 0.35rem;
+            font-weight: 600;
+        }
+
+        .terminal-input-group input {
+            width: 100%;
+            border-radius: 0.95rem;
+            border: 1px solid #c3b8a1;
+            background: #fffef8;
+            padding: 0.8rem 0.9rem;
+        }
+
+        .terminal-button,
+        .terminal-link-button {
+            border: 0;
+            border-radius: 0.95rem;
+            padding: 0.9rem 1rem;
+            font-weight: 700;
+        }
+
+        .terminal-button--danger {
+            background: #902f2f;
+            color: #fff6ef;
+        }
+
+        .terminal-button--success {
+            background: #167b60;
+            color: #effff8;
+        }
+
+        .terminal-button--secondary {
+            background: #d6cfbe;
+            color: #21302c;
+        }
+
+        .terminal-button--primary {
+            background: #1d5f90;
+            color: #eef8ff;
+        }
+
+        .terminal-secondary-row {
+            margin-top: 0.85rem;
+        }
+
+        .terminal-link-button {
+            width: 100%;
+            background: transparent;
+            border: 1px solid #c9bdab;
+            color: #384541;
+        }
+
+        .terminal-camera-list,
+        .terminal-search-results {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .terminal-camera-option,
+        .terminal-search-result {
+            width: 100%;
+            text-align: left;
+            border: 1px solid #d5cab3;
+            background: #fffdf8;
+            border-radius: 1rem;
+            padding: 0.9rem 1rem;
+        }
+
+        .terminal-camera-option__name,
+        .terminal-search-result__title {
+            display: block;
+            font-weight: 700;
+            color: #1f2e2a;
+        }
+
+        .terminal-camera-option__meta,
+        .terminal-search-result__meta,
+        .terminal-search-result__description,
+        .terminal-search-empty {
+            display: block;
+            color: #5e6b67;
+            font-size: 0.9rem;
+            margin-top: 0.2rem;
+        }
+
+        .terminal-search-input {
+            width: 100%;
+            border-radius: 1rem;
+            border: 1px solid #c3b8a1;
+            background: #fffef8;
+            padding: 0.9rem 1rem;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 767.98px) {
+            .stock-terminal-shell {
+                padding: 0.9rem 0.8rem 0.9rem;
+            }
+
+            .terminal-action-row,
+            .terminal-data-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .terminal-modal__card {
+                width: calc(100vw - 1rem);
+                margin-top: 4vh;
+                padding: 1.1rem;
+            }
+
+            #stock-terminal-reader {
+                min-height: 58vh;
+            }
+        }
+    </style>
+{% endblock %}

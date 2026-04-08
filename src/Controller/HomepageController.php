@@ -43,7 +43,15 @@ class HomepageController extends AbstractController
 
 
     #[Route(path: '/', name: 'homepage')]
-    public function homepage(Request $request, GitVersionInfoProvider $versionInfo, EntityManagerInterface $entityManager,
+    public function homepage(): Response
+    {
+        $this->denyAccessUnlessGranted('HAS_ACCESS_PERMISSIONS');
+
+        return $this->redirectToRoute('scan_stock_terminal');
+    }
+
+    #[Route(path: '/dashboard', name: 'classic_homepage')]
+    public function classicHomepage(Request $request, GitVersionInfoProvider $versionInfo, EntityManagerInterface $entityManager,
     UpdateAvailableFacade $updateAvailableManager): Response
     {
         $this->denyAccessUnlessGranted('HAS_ACCESS_PERMISSIONS');

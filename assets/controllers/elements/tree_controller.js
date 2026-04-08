@@ -21,6 +21,7 @@ import {Controller} from "@hotwired/stimulus";
 
 import {BSTreeView, BSTreeViewNode, BS5Theme, FAIconTheme, EVENT_INITIALIZED} from "@jbtronics/bs-treeview";
 import "@jbtronics/bs-treeview/styles/bs-treeview.css";
+import Collapse from "bootstrap/js/dist/collapse";
 
 export default class extends Controller {
     static targets = [ "tree" ];
@@ -102,6 +103,7 @@ export default class extends Controller {
             onNodeSelected: (event) => {
                 const node = event.detail.node;
                 if (node.href) {
+                    this._hideMobileSidebarOverlay();
                     window.Turbo.visit(node.href, {action: "advance", frame: this._frame});
                 }
             },
@@ -170,5 +172,18 @@ export default class extends Controller {
             //Otherwise load the data provided via the data attribute
             return myResolve(this._data);
         });
+    }
+
+    _hideMobileSidebarOverlay() {
+        if (!window.matchMedia("(max-width: 767.98px)").matches) {
+            return;
+        }
+
+        const sidebarContainer = document.getElementById("sidebar-container");
+        if (!sidebarContainer || !sidebarContainer.classList.contains("show")) {
+            return;
+        }
+
+        Collapse.getOrCreateInstance(sidebarContainer, { toggle: false }).hide();
     }
 }

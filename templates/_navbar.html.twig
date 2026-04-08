@@ -2,16 +2,16 @@
 {% import "vars.macro.twig" as vars %}
 {% import "components/search.macro.html.twig" as search %}
 
-<nav class="navbar navbar-expand-md bg-body-tertiary border-bottom shadow-sm fixed-top py-0" id="navbar">
+<nav class="navbar navbar-expand-md bg-body-tertiary border-bottom shadow-sm fixed-top py-0" id="navbar" {{ stimulus_controller('common/mobile-overlays') }}>
     <div class="container-fluid">
         <div class="d-flex justify-content-start align-items-center">
-            <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#sidebar-container">
+            <button type="button" class="navbar-toggler" {{ stimulus_action('common/mobile-overlays', 'toggleSidebar') }}>
                 <span class="visually-hidden">{% trans %}sidebar.toggle{% endtrans %}</span>
                 <!-- <span class="navbar-toggler-icon"></span> -->
                 <i class="fas fa-folder-open fa-lg fa-fw"></i>
             </button>
             {% if is_granted("@tools.label_scanner") %}
-                <a href="{{ path('scan_quick_add') }}" class="navbar-toggler nav-link ms-3">
+                <a href="{{ path('scan_quick_add') }}" class="navbar-toggler nav-link ms-3" {{ stimulus_action('common/mobile-overlays', 'openCamera') }}>
                     <i class="fas fa-camera-retro fa-fw"></i>
                 </a>
             {% endif %}
@@ -20,7 +20,7 @@
         <a class="navbar-brand" href="{{ path('homepage') }}"><i class="fa fa-microchip"
                                                                  aria-hidden="true"></i> {{ vars.partdb_title() }}</a>
 
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent"
+        <button class="navbar-toggler" type="button" {{ stimulus_action('common/mobile-overlays', 'toggleNavbar') }}
                 aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
             <!-- <span class="navbar-toggler-icon"></span> -->
             <i class="fas fa-bars  fa-lg"></i>
@@ -78,6 +78,12 @@
                                             <a class="dropdown-item" href="{{ path('scan_storage_location_allocator') }}">
                                                 <i class="fa-fw fa-solid fa-map-location-dot"></i>
                                                 Storage Location Allocator
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="{{ path('scan_stock_terminal') }}">
+                                                <i class="fa-fw fa-solid fa-expand"></i>
+                                                Stock Terminal
                                             </a>
                                         </li>
                                         {% if is_granted('@storelocations.create') %}

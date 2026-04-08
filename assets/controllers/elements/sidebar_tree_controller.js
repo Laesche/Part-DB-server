@@ -142,5 +142,6 @@ export default class extends TreeController {
         localStorage.setItem(this._storage_key, mode);
 
         this._lastUpdate = new Date();
+        this._hideMobileSidebarOverlay();
     }
 }
