@@ -92,12 +92,14 @@
 
                 <div class="terminal-modal__header">
                     <div class="terminal-modal__eyebrow" {{ stimulus_target('pages/stock-terminal', 'modalTitle') }}>Part</div>
-                    <h2 class="terminal-modal__subtitle" {{ stimulus_target('pages/stock-terminal', 'modalSubtitle') }}>Inspect stock and book parts in or out.</h2>
+                    <h2 class="terminal-modal__subtitle" {{ stimulus_target('pages/stock-terminal', 'modalSubtitle') }}></h2>
                 </div>
 
                 <div {{ stimulus_target('pages/stock-terminal', 'partPanel') }}>
                     <div class="terminal-data-card">
-                        <img class="terminal-part-image d-none" alt="Part preview" {{ stimulus_target('pages/stock-terminal', 'partImage') }}>
+                        <a class="terminal-part-image-link d-none" href="#" {{ stimulus_target('pages/stock-terminal', 'partImageLink') }} data-action="click->pages--stock-terminal#openPart">
+                            <img class="terminal-part-image" alt="Part preview" {{ stimulus_target('pages/stock-terminal', 'partImage') }}>
+                        </a>
                         <div class="terminal-data-card__name" {{ stimulus_target('pages/stock-terminal', 'partName') }}>Part</div>
                         <div class="terminal-data-card__meta" {{ stimulus_target('pages/stock-terminal', 'partCategory') }}>Category</div>
                         <div class="terminal-data-grid">
@@ -109,10 +111,6 @@
                                 <span class="terminal-metric__label">Storage Locations</span>
                                 <span class="terminal-metric__value terminal-metric__value--small" {{ stimulus_target('pages/stock-terminal', 'partLocation') }}>None</span>
                             </div>
-                            <div class="terminal-metric terminal-metric--wide">
-                                <span class="terminal-metric__label">Selected Lot</span>
-                                <span class="terminal-metric__value terminal-metric__value--small" {{ stimulus_target('pages/stock-terminal', 'partAmount') }}>Unknown</span>
-                            </div>
                         </div>
                     </div>
 
@@ -122,16 +120,10 @@
                             <input type="number" min="0.0000001" step="any" value="1" {{ stimulus_target('pages/stock-terminal', 'stockAmount') }}>
                         </label>
                         <button type="button" class="terminal-button terminal-button--danger" data-action="click->pages--stock-terminal#reduceStock">
-                            <i class="fas fa-minus"></i> Reduce
+                            -
                         </button>
                         <button type="button" class="terminal-button terminal-button--success" data-action="click->pages--stock-terminal#addStock">
-                            <i class="fas fa-plus"></i> Add
-                        </button>
-                    </div>
-
-                    <div class="terminal-secondary-row">
-                        <button type="button" class="terminal-link-button" data-action="click->pages--stock-terminal#openPart">
-                            Open part page
+                            +
                         </button>
                     </div>
                 </div>
@@ -257,6 +249,8 @@
             max-width: 68rem;
             margin: 0 auto 0.75rem;
             width: 100%;
+            display: grid;
+            gap: 0.75rem;
         }
 
         .stock-terminal-toolbar {
@@ -294,7 +288,6 @@
             border-radius: 1rem;
             background: rgba(247, 189, 108, 0.14);
             border: 1px solid rgba(247, 189, 108, 0.35);
-            margin-bottom: 0.85rem;
             min-height: 4rem;
             box-sizing: border-box;
         }
@@ -504,10 +497,10 @@
         }
 
         .terminal-modal__subtitle {
-            margin: 0 2rem 1rem 0;
-            font-size: 1.45rem;
-            line-height: 1.08;
-            font-weight: 700;
+            margin: 0;
+            min-height: 0;
+            font-size: 0;
+            line-height: 0;
             flex: 0 0 auto;
         }
 
@@ -516,6 +509,12 @@
             border-radius: 1.2rem;
             background: linear-gradient(135deg, #fffef9, #e7dfce);
             margin-bottom: 1rem;
+        }
+
+        .terminal-part-image-link {
+            display: block;
+            text-decoration: none;
+            cursor: pointer;
         }
 
         .terminal-part-image {
@@ -552,10 +551,6 @@
             background: rgba(16, 38, 31, 0.06);
         }
 
-        .terminal-metric--wide {
-            grid-column: 1 / -1;
-        }
-
         .terminal-metric__label {
             display: block;
             text-transform: uppercase;
@@ -584,6 +579,7 @@
         .terminal-action-row {
             grid-template-columns: minmax(0, 1fr) auto auto;
             align-items: end;
+            margin-top: 0.15rem;
         }
 
         .terminal-input-group {
@@ -611,11 +607,17 @@
         .terminal-button--danger {
             background: #902f2f;
             color: #fff6ef;
+            min-width: 3.1rem;
+            font-size: 1.4rem;
+            line-height: 1;
         }
 
         .terminal-button--success {
             background: #167b60;
             color: #effff8;
+            min-width: 3.1rem;
+            font-size: 1.4rem;
+            line-height: 1;
         }
 
         .terminal-button--secondary {
@@ -626,10 +628,6 @@
         .terminal-button--primary {
             background: #1d5f90;
             color: #eef8ff;
-        }
-
-        .terminal-secondary-row {
-            margin-top: 0.85rem;
         }
 
         .terminal-link-button {
@@ -651,6 +649,13 @@
         .terminal-search-results {
             display: grid;
             gap: 0.75rem;
+        }
+
+        .terminal-search-results {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 0.1rem;
         }
 
         .terminal-camera-option,

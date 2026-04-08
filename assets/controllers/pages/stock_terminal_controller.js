@@ -21,12 +21,12 @@ export default class extends Controller {
         "modalSubtitle",
         "partPanel",
         "storagePanel",
+        "partImageLink",
         "partImage",
         "partName",
         "partCategory",
         "partStock",
         "partLocation",
-        "partAmount",
         "storageName",
         "stockAmount",
         "cameraModal",
@@ -295,7 +295,7 @@ export default class extends Controller {
         const isMobile = window.matchMedia("(max-width: 768px)").matches;
         const qrbox = (viewfinderWidth, viewfinderHeight) => {
             const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrboxSize = Math.floor(minEdgeSize * 0.62);
+            const qrboxSize = Math.floor(minEdgeSize * 0.7);
             return { width: qrboxSize, height: qrboxSize };
         };
 
@@ -431,17 +431,19 @@ export default class extends Controller {
     _showPartModal(part) {
         this.modalTitleTarget.textContent = part.newlyCreated ? "New Part Added" : "Part";
         this.modalSubtitleTarget.textContent = part.newlyCreated
-            ? "The scanned code created a new Part-DB entry."
-            : "Inspect stock and book parts in or out.";
+            ? ""
+            : "";
         this.partPanelTarget.classList.remove("d-none");
         this.storagePanelTarget.classList.add("d-none");
 
         if (part.image) {
             this.partImageTarget.src = part.image;
-            this.partImageTarget.classList.remove("d-none");
+            this.partImageLinkTarget.href = part.openUrl || "#";
+            this.partImageLinkTarget.classList.remove("d-none");
         } else {
             this.partImageTarget.src = "";
-            this.partImageTarget.classList.add("d-none");
+            this.partImageLinkTarget.href = "#";
+            this.partImageLinkTarget.classList.add("d-none");
         }
 
         this.partNameTarget.textContent = part.name || "Unnamed part";
@@ -450,9 +452,6 @@ export default class extends Controller {
             ? `>= ${this._formatAmount(part.overallStock)} overall`
             : `${this._formatAmount(part.overallStock)} overall`;
         this.partLocationTarget.textContent = part.storageLocationsLabel || "No storage location assigned";
-        this.partAmountTarget.textContent = part.lotUnknown
-            ? "Selected lot stock unknown"
-            : `Selected lot: ${this._formatAmount(part.lotAmount ?? 0)}`;
 
         this.modalTarget.classList.remove("d-none");
     }
