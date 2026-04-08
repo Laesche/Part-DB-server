@@ -13,6 +13,8 @@ export default class extends Controller {
     static targets = [
         "reader",
         "status",
+        "notice",
+        "noticeText",
         "locationBanner",
         "modal",
         "modalTitle",
@@ -112,7 +114,7 @@ export default class extends Controller {
 
             const data = await response.json();
             if (!response.ok || !data.ok) {
-                this._setStatus(data.message || "This code cannot be used here.", "danger");
+                this._showNotice(data.message || "This code cannot be used here.");
                 this._busy = false;
                 return;
             }
@@ -127,7 +129,7 @@ export default class extends Controller {
                 this._showPartModal(data.part);
             }
         } catch (_) {
-            this._setStatus("Failed to process the scan.", "danger");
+            this._showNotice("Failed to process the scan.");
         }
 
         this._busy = false;
@@ -184,7 +186,7 @@ export default class extends Controller {
             });
             const data = await response.json();
             if (!response.ok || !data.ok || !data.part) {
-                this._setStatus(data.message || "Could not open part from search.", "danger");
+                this._showNotice(data.message || "Could not open part from search.");
                 return;
             }
 
@@ -193,7 +195,7 @@ export default class extends Controller {
             this._showPartModal(data.part);
             this._setStatus(data.message || "Part opened from search.", "success");
         } catch (_) {
-            this._setStatus("Could not open part from search.", "danger");
+            this._showNotice("Could not open part from search.");
         }
     }
 
@@ -315,7 +317,7 @@ export default class extends Controller {
             this._setStatus("Scanner ready. Point the camera at a code.", "info");
         } catch (_) {
             this._showCameraModal();
-            this._setStatus("Could not start the selected camera.", "danger");
+            this._showNotice("Could not start the selected camera.");
         }
     }
 
@@ -406,7 +408,7 @@ export default class extends Controller {
 
             const data = await response.json();
             if (!response.ok || !data.ok) {
-                this._setStatus(data.message || "Could not change stock.", "danger");
+                this._showNotice(data.message || "Could not change stock.");
                 return;
             }
 
@@ -415,8 +417,15 @@ export default class extends Controller {
             this._setStatus(data.message || "Stock updated.", "success");
             this.stockAmountTarget.value = "1";
         } catch (_) {
-            this._setStatus("Failed to change stock.", "danger");
+            this._showNotice("Failed to change stock.");
         }
+    }
+
+    closeNotice() {
+        if (!this.hasNoticeTarget) {
+            return;
+        }
+        this.noticeTarget.classList.add("d-none");
     }
 
     _showPartModal(part) {
@@ -464,7 +473,7 @@ export default class extends Controller {
         }
 
         if (this._activeLocation?.id) {
-            this.locationBannerTarget.classList.remove("d-none");
+            this.locationBannerTarget.classList.remove("stock-terminal-active--hidden");
             this.locationBannerTarget.innerHTML = `
                 <span>Adding scanned parts to <strong>${this._escapeHtml(this._activeLocation.fullPath)}</strong></span>
                 <button type="button" class="terminal-chip terminal-chip--danger" data-action="click->pages--stock-terminal#clearLocationFlow">Exit</button>
@@ -472,7 +481,7 @@ export default class extends Controller {
             return;
         }
 
-        this.locationBannerTarget.classList.add("d-none");
+        this.locationBannerTarget.classList.add("stock-terminal-active--hidden");
         this.locationBannerTarget.innerHTML = "";
     }
 
@@ -483,6 +492,15 @@ export default class extends Controller {
 
         this.statusTarget.className = `terminal-status terminal-status--${level}`;
         this.statusTarget.textContent = message;
+    }
+
+    _showNotice(message) {
+        if (!this.hasNoticeTarget || !this.hasNoticeTextTarget) {
+            return;
+        }
+
+        this.noticeTextTarget.textContent = message;
+        this.noticeTarget.classList.remove("d-none");
     }
 
     _formatAmount(value) {

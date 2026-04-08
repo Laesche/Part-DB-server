@@ -7023,7 +7023,7 @@ function applyAutoLabelPayload(payload) {
 
   if (layout === 'part_qr_left' || layout === 'storage_default') {
     const gap = 8;
-    const qrSize = 150;
+    const qrSize = 200;
     const qrY = Math.max(margin, Math.floor((dims.height - qrSize) / 2));
     const rightX = margin + qrSize + gap;
     const rightWidth = 150;
@@ -7043,22 +7043,40 @@ function applyAutoLabelPayload(payload) {
     });
     state.elements.push(qrElement);
 
-    const nameElement = createTextElement(name, {
-      x: rightX,
-      y: margin,
-      width: rightWidth,
-      height: nameHeight,
-      zone: 0,
-    });
-    nameElement.fontSize = 18;
-    nameElement.fontWeight = 'bold';
-    nameElement.autoScale = false;
-    nameElement.noWrap = false;
-    nameElement.clipOverflow = false;
-    nameElement.verticalAlign = 'middle';
-    state.elements.push(nameElement);
+    if (layout === 'storage_default') {
+      const nameElement = createTextElement(name, {
+        x: 135,
+        y: 80,
+        width: 240,
+        height: 80,
+        zone: 0,
+      });
+      nameElement.fontSize = 28;
+      nameElement.fontWeight = 'bold';
+      nameElement.autoScale = true;
+      nameElement.noWrap = false;
+      nameElement.clipOverflow = false;
+      nameElement.verticalAlign = 'middle';
+      nameElement.rotation = 270;
+      state.elements.push(nameElement);
+    } else {
+      const nameElement = createTextElement(name, {
+        x: rightX,
+        y: margin,
+        width: rightWidth,
+        height: nameHeight,
+        zone: 0,
+      });
+      nameElement.fontSize = 18;
+      nameElement.fontWeight = 'bold';
+      nameElement.autoScale = false;
+      nameElement.noWrap = false;
+      nameElement.clipOverflow = false;
+      nameElement.verticalAlign = 'middle';
+      state.elements.push(nameElement);
+    }
 
-    if (secondaryText) {
+    if (secondaryText && layout !== 'storage_default') {
       const categoryElement = createTextElement(secondaryText, {
         x: rightX,
         y: margin + nameHeight,

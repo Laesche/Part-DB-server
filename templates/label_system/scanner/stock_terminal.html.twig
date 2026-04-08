@@ -14,6 +14,16 @@
         <div class="stock-terminal-bg stock-terminal-bg--one"></div>
         <div class="stock-terminal-bg stock-terminal-bg--two"></div>
 
+        <div class="terminal-notice d-none" {{ stimulus_target('pages/stock-terminal', 'notice') }}>
+            <div class="terminal-notice__card">
+                <div class="terminal-notice__icon"><i class="fas fa-circle-exclamation"></i></div>
+                <div class="terminal-notice__text" {{ stimulus_target('pages/stock-terminal', 'noticeText') }}></div>
+                <button type="button" class="terminal-notice__close" data-action="click->pages--stock-terminal#closeNotice" aria-label="Dismiss">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+
         <header class="stock-terminal-top">
             <div class="stock-terminal-toolbar">
                 <button type="button" class="stock-terminal-toolbar__btn" data-action="click->pages--stock-terminal#openSearch" aria-label="Search parts">
@@ -24,7 +34,7 @@
                 </button>
             </div>
             <div class="stock-terminal-eyebrow">Scanner Terminal</div>
-            <div class="stock-terminal-active d-none" {{ stimulus_target('pages/stock-terminal', 'locationBanner') }}></div>
+            <div class="stock-terminal-active stock-terminal-active--hidden" {{ stimulus_target('pages/stock-terminal', 'locationBanner') }}></div>
             <div class="terminal-status terminal-status--info" {{ stimulus_target('pages/stock-terminal', 'status') }}>
                 Scan a part or storage label.
             </div>
@@ -204,6 +214,45 @@
             z-index: 1;
         }
 
+        .terminal-notice {
+            position: fixed;
+            top: max(0.75rem, env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(calc(100vw - 1.2rem), 34rem);
+            z-index: 1100;
+        }
+
+        .terminal-notice__card {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: start;
+            gap: 0.8rem;
+            padding: 0.95rem 1rem;
+            border-radius: 1rem;
+            background: rgba(132, 35, 35, 0.96);
+            color: #fff5f3;
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(10px);
+        }
+
+        .terminal-notice__icon {
+            padding-top: 0.1rem;
+        }
+
+        .terminal-notice__text {
+            line-height: 1.35;
+        }
+
+        .terminal-notice__close {
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+
         .stock-terminal-top {
             max-width: 68rem;
             margin: 0 auto 0.75rem;
@@ -246,6 +295,13 @@
             background: rgba(247, 189, 108, 0.14);
             border: 1px solid rgba(247, 189, 108, 0.35);
             margin-bottom: 0.85rem;
+            min-height: 4rem;
+            box-sizing: border-box;
+        }
+
+        .stock-terminal-active--hidden {
+            visibility: hidden;
+            pointer-events: none;
         }
 
         .terminal-chip {
@@ -266,6 +322,10 @@
             padding: 0.85rem 1rem;
             border: 1px solid transparent;
             backdrop-filter: blur(12px);
+            min-height: 4rem;
+            display: flex;
+            align-items: center;
+            box-sizing: border-box;
         }
 
         .terminal-status--info {
@@ -416,12 +476,17 @@
         .terminal-modal__card {
             position: relative;
             width: min(92vw, 36rem);
-            margin: 7vh auto 0;
+            max-height: calc(100vh - max(1.2rem, env(safe-area-inset-top)) - max(1.2rem, env(safe-area-inset-bottom)) - 1.2rem);
+            margin: max(0.6rem, env(safe-area-inset-top)) auto max(0.6rem, env(safe-area-inset-bottom));
             padding: 1.4rem;
             border-radius: 1.5rem;
             background: #f6f0e2;
             color: #1c2a27;
             box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
         }
 
         .terminal-modal__card--compact {
@@ -443,6 +508,7 @@
             font-size: 1.45rem;
             line-height: 1.08;
             font-weight: 700;
+            flex: 0 0 auto;
         }
 
         .terminal-data-card {
@@ -573,6 +639,14 @@
             color: #384541;
         }
 
+        .terminal-modal [data-pages--stock-terminal-target="partPanel"],
+        .terminal-modal [data-pages--stock-terminal-target="storagePanel"] {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 0.1rem;
+        }
+
         .terminal-camera-list,
         .terminal-search-results {
             display: grid;
@@ -613,6 +687,7 @@
             background: #fffef8;
             padding: 0.9rem 1rem;
             margin-bottom: 1rem;
+            flex: 0 0 auto;
         }
 
         @media (max-width: 767.98px) {
@@ -627,8 +702,8 @@
 
             .terminal-modal__card {
                 width: calc(100vw - 1rem);
-                margin-top: 4vh;
                 padding: 1.1rem;
+                max-height: calc(100vh - max(0.5rem, env(safe-area-inset-top)) - max(0.5rem, env(safe-area-inset-bottom)));
             }
 
             #stock-terminal-reader {
