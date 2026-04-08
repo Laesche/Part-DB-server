@@ -41,11 +41,14 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Attachments\Attachment;
 use App\Entity\Parts\PartLot;
 use App\Entity\Parts\Part;
 use App\Entity\Parts\Category;
 use App\Entity\Parts\StorageLocation;
 use App\Exceptions\InfoProviderNotActiveException;
+use App\Services\Attachments\AttachmentURLGenerator;
+use App\Services\Attachments\PartPreviewGenerator;
 use App\Form\LabelSystem\ScanDialogType;
 use App\Services\InfoProviderSystem\PartInfoRetriever;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultInterface;
@@ -82,6 +85,8 @@ class ScanController extends AbstractController
     public function __construct(
         protected BarcodeScanResultHandler $resultHandler,
         protected BarcodeScanHelper $barcodeNormalizer,
+        private readonly PartPreviewGenerator $partPreviewGenerator,
+        private readonly AttachmentURLGenerator $attachmentURLGenerator,
     ) {}
 
     #[Route(path: '', name: 'scan_dialog')]
@@ -1370,6 +1375,7 @@ class ScanController extends AbstractController
                 'id' => $part->getID(),
                 'name' => $part->getName(),
                 'category' => $part->getCategory()?->getFullPath() ?? '',
+                'image' => $this->getPartPreviewImageUrl($part),
                 'overallStock' => $part->getAmountSum(),
                 'stockUnknown' => $part->isAmountUnknown(),
                 'storageLocation' => $lot?->getStorageLocation()?->getFullPath(),
@@ -1382,6 +1388,16 @@ class ScanController extends AbstractController
                 'newlyCreated' => $newlyCreated,
             ],
         ];
+    }
+
+    private function getPartPreviewImageUrl(Part $part): ?string
+    {
+        $previewAttachment = $this->partPreviewGenerator->getTablePreviewAttachment($part);
+        if (!$previewAttachment instanceof Attachment) {
+            return null;
+        }
+
+        return $this->attachmentURLGenerator->getThumbnailURL($previewAttachment, 'thumbnail_sm');
     }
 
     private function buildStorageLocationPartsListUrl(StorageLocation $location): string

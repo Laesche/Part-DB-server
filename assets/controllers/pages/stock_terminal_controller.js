@@ -19,6 +19,7 @@ export default class extends Controller {
         "modalSubtitle",
         "partPanel",
         "storagePanel",
+        "partImage",
         "partName",
         "partCategory",
         "partStock",
@@ -292,7 +293,7 @@ export default class extends Controller {
         const isMobile = window.matchMedia("(max-width: 768px)").matches;
         const qrbox = (viewfinderWidth, viewfinderHeight) => {
             const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrboxSize = Math.floor(minEdgeSize * 0.72);
+            const qrboxSize = Math.floor(minEdgeSize * 0.62);
             return { width: qrboxSize, height: qrboxSize };
         };
 
@@ -339,8 +340,8 @@ export default class extends Controller {
 
         this.cameraListTarget.innerHTML = this._cameras.map((camera) => `
             <button type="button" class="terminal-camera-option" data-camera-id="${this._escapeHtml(camera.id)}" data-action="click->pages--stock-terminal#chooseCamera">
-                <span class="terminal-camera-option__name">${this._escapeHtml(camera.label || "Camera")}</span>
-                <span class="terminal-camera-option__meta">${this._escapeHtml(camera.id)}</span>
+                <span class="terminal-camera-option__name">${this._escapeHtml(this._getCameraName(camera))}</span>
+                <span class="terminal-camera-option__meta">${this._escapeHtml(this._getCameraFacing(camera))}</span>
             </button>
         `).join("");
         this.cameraModalTarget.classList.remove("d-none");
@@ -426,6 +427,14 @@ export default class extends Controller {
         this.partPanelTarget.classList.remove("d-none");
         this.storagePanelTarget.classList.add("d-none");
 
+        if (part.image) {
+            this.partImageTarget.src = part.image;
+            this.partImageTarget.classList.remove("d-none");
+        } else {
+            this.partImageTarget.src = "";
+            this.partImageTarget.classList.add("d-none");
+        }
+
         this.partNameTarget.textContent = part.name || "Unnamed part";
         this.partCategoryTarget.textContent = part.category || "No category";
         this.partStockTarget.textContent = part.stockUnknown
@@ -492,5 +501,22 @@ export default class extends Controller {
             .replaceAll(">", "&gt;")
             .replaceAll("\"", "&quot;")
             .replaceAll("'", "&#039;");
+    }
+
+    _getCameraName(camera) {
+        return String(camera?.label || "Camera")
+            .replace(/\s*\([^)]+\)\s*$/u, "")
+            .trim();
+    }
+
+    _getCameraFacing(camera) {
+        const label = String(camera?.label || "").toLowerCase();
+        if (label.includes("front") || label.includes("user")) {
+            return "Facing front";
+        }
+        if (label.includes("back") || label.includes("rear") || label.includes("environment")) {
+            return "Facing back";
+        }
+        return "Camera";
     }
 }

@@ -24,7 +24,6 @@
                 </button>
             </div>
             <div class="stock-terminal-eyebrow">Scanner Terminal</div>
-            <h1 class="stock-terminal-title">Scan parts, storage locations, and stock movements in one fullscreen flow.</h1>
             <div class="stock-terminal-active d-none" {{ stimulus_target('pages/stock-terminal', 'locationBanner') }}></div>
             <div class="terminal-status terminal-status--info" {{ stimulus_target('pages/stock-terminal', 'status') }}>
                 Scan a part or storage label.
@@ -88,6 +87,7 @@
 
                 <div {{ stimulus_target('pages/stock-terminal', 'partPanel') }}>
                     <div class="terminal-data-card">
+                        <img class="terminal-part-image d-none" alt="Part preview" {{ stimulus_target('pages/stock-terminal', 'partImage') }}>
                         <div class="terminal-data-card__name" {{ stimulus_target('pages/stock-terminal', 'partName') }}>Part</div>
                         <div class="terminal-data-card__meta" {{ stimulus_target('pages/stock-terminal', 'partCategory') }}>Category</div>
                         <div class="terminal-data-grid">
@@ -146,18 +146,30 @@
     </div>
 
     <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            padding-top: 0 !important;
+            overflow: hidden;
+            overscroll-behavior: none;
+            touch-action: manipulation;
+            background: #10261f;
+        }
+
         .stock-terminal-shell {
-            min-height: 100vh;
+            height: 100vh;
             position: relative;
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            padding: 1.25rem 1rem 1rem;
+            padding: max(0.7rem, env(safe-area-inset-top)) 0.9rem max(0.7rem, env(safe-area-inset-bottom)) 0.9rem;
             background:
                 radial-gradient(circle at top left, rgba(255, 210, 122, 0.22), transparent 30%),
                 radial-gradient(circle at bottom right, rgba(0, 153, 122, 0.18), transparent 28%),
                 linear-gradient(160deg, #10261f 0%, #132f29 35%, #091411 100%);
             color: #f4efe4;
+            box-sizing: border-box;
         }
 
         .stock-terminal-bg {
@@ -194,7 +206,7 @@
 
         .stock-terminal-top {
             max-width: 68rem;
-            margin: 0 auto 1rem;
+            margin: 0 auto 0.75rem;
             width: 100%;
         }
 
@@ -222,14 +234,6 @@
             font-size: 0.72rem;
             color: #f7bd6c;
             margin-bottom: 0.5rem;
-        }
-
-        .stock-terminal-title {
-            font-size: clamp(1.5rem, 4vw, 2.6rem);
-            line-height: 1.02;
-            max-width: 18ch;
-            margin: 0 0 0.8rem;
-            font-weight: 700;
         }
 
         .stock-terminal-active {
@@ -301,10 +305,11 @@
             position: relative;
             overflow: hidden;
             border-radius: 2rem;
-            padding: 1rem;
+            padding: 0.8rem;
             background: rgba(4, 14, 12, 0.56);
             border: 1px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+            min-height: 0;
         }
 
         .scanner-frame__grid {
@@ -321,7 +326,37 @@
         #stock-terminal-reader {
             position: relative;
             z-index: 1;
-            min-height: min(72vh, 48rem);
+            height: min(70vh, 46rem);
+            min-height: 16rem;
+            overflow: hidden;
+            border-radius: 1.45rem;
+            background: rgba(0, 0, 0, 0.28);
+        }
+
+        #stock-terminal-reader > div {
+            height: 100% !important;
+        }
+
+        #stock-terminal-reader video,
+        #stock-terminal-reader canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            object-position: center center !important;
+            border-radius: 1.45rem;
+        }
+
+        #stock-terminal-reader section {
+            padding: 0 !important;
+            background: transparent !important;
+        }
+
+        #stock-terminal-reader section > div {
+            background: transparent !important;
+        }
+
+        #stock-terminal-reader img {
+            display: none !important;
         }
 
         .stock-terminal-footer {
@@ -415,6 +450,17 @@
             border-radius: 1.2rem;
             background: linear-gradient(135deg, #fffef9, #e7dfce);
             margin-bottom: 1rem;
+        }
+
+        .terminal-part-image {
+            width: 100%;
+            max-height: 12rem;
+            object-fit: contain;
+            object-position: center;
+            border-radius: 1rem;
+            background: rgba(16, 38, 31, 0.06);
+            margin-bottom: 0.9rem;
+            padding: 0.35rem;
         }
 
         .terminal-data-card__name {
@@ -571,7 +617,7 @@
 
         @media (max-width: 767.98px) {
             .stock-terminal-shell {
-                padding: 0.9rem 0.8rem 0.9rem;
+                padding: max(0.55rem, env(safe-area-inset-top)) 0.65rem max(0.55rem, env(safe-area-inset-bottom)) 0.65rem;
             }
 
             .terminal-action-row,
@@ -586,8 +632,26 @@
             }
 
             #stock-terminal-reader {
-                min-height: 58vh;
+                height: min(62vh, 32rem);
+                min-height: 14rem;
             }
         }
     </style>
+    <script>
+        (() => {
+            const setViewport = () => {
+                let viewport = document.querySelector('meta[name="viewport"]');
+                if (!viewport) {
+                    viewport = document.createElement('meta');
+                    viewport.name = 'viewport';
+                    document.head.appendChild(viewport);
+                }
+                viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+            };
+
+            setViewport();
+            document.addEventListener('gesturestart', (event) => event.preventDefault(), { passive: false });
+            document.addEventListener('dblclick', (event) => event.preventDefault(), { passive: false });
+        })();
+    </script>
 {% endblock %}
