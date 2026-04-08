@@ -1,0 +1,31 @@
+{% extends 'main_card.html.twig' %}
+
+{% block card_title %}
+    <i class="fas fa-map-location-dot fa-fw"></i> Storage Location Allocator
+{% endblock %}
+
+{% block card_content %}
+    <div {{ stimulus_controller('pages/storage-location-allocator', {
+        scanUrl: path('scan_storage_location_allocator_scan'),
+        csrfToken: csrfToken
+    }) }}>
+        <p class="text-muted mb-3">
+            Scan one storage location label, then scan all items that belong there. Scan a different storage location label at any time to switch the target location.
+        </p>
+
+        <div class="d-flex gap-2 align-items-start mb-3">
+            <div class="flex-grow-1" {{ stimulus_target('pages/storage-location-allocator', 'currentLocation') }}></div>
+            <button type="button" class="btn btn-outline-secondary" data-action="click->pages--storage-location-allocator#resetLocation">
+                Clear
+            </button>
+        </div>
+
+        <div class="alert alert-info mb-3" {{ stimulus_target('pages/storage-location-allocator', 'status') }}>
+            Scan a storage location label to begin allocating items.
+        </div>
+
+        <div class="img-thumbnail" style="max-width: 700px;">
+            <div id="storage-location-allocator-reader" {{ stimulus_target('pages/storage-location-allocator', 'reader') }}></div>
+        </div>
+    </div>
+{% endblock %}

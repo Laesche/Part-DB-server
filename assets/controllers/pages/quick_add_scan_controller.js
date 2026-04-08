@@ -10,6 +10,7 @@ import Modal from "bootstrap/js/dist/modal";
 
 export default class extends Controller {
     static targets = ["reader"];
+    static phomymoTabName = "partdb-phomymo";
 
     static values = {
         lookupUrl: String,
@@ -204,7 +205,7 @@ export default class extends Controller {
             this._setStatus(`Storage location "${data.storageLocationName}" created and selected.`, "success");
 
             if (data.printUrl && window.confirm("Print a new label for this storage location now?")) {
-                window.location.href = data.printUrl;
+                this._openPhomymoTab(data.printUrl);
             }
         } catch (_) {
             this._setStatus("Failed to create storage location.", "danger");
@@ -261,7 +262,7 @@ export default class extends Controller {
             this._setStatus(data.message || "Part added.", "success");
 
             if (data.printUrl && window.confirm("Print a label for this part now?")) {
-                window.location.href = data.printUrl;
+                this._openPhomymoTab(data.printUrl);
             }
         } catch (_) {
             this._setStatus("Failed to add part.", "danger");
@@ -348,6 +349,16 @@ export default class extends Controller {
             option.textContent = label;
         }
         select.value = value;
+    }
+
+    _openPhomymoTab(url) {
+        const phomymoTab = window.open(url, this.constructor.phomymoTabName);
+        if (phomymoTab) {
+            phomymoTab.focus();
+            return;
+        }
+
+        window.location.href = url;
     }
 
     _clearPendingTokens() {

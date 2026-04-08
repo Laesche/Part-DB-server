@@ -74,6 +74,12 @@
                                                 Quick Scan Add
                                             </a>
                                         </li>
+                                        <li>
+                                            <a class="dropdown-item" href="{{ path('scan_storage_location_allocator') }}">
+                                                <i class="fa-fw fa-solid fa-map-location-dot"></i>
+                                                Storage Location Allocator
+                                            </a>
+                                        </li>
                                         {% if is_granted('@storelocations.create') %}
                                             <li>
                                                 <a class="dropdown-item" href="{{ path('scan_storage_location_label') }}">
