@@ -295,7 +295,7 @@ export default class extends Controller {
         const isMobile = window.matchMedia("(max-width: 768px)").matches;
         const qrbox = (viewfinderWidth, viewfinderHeight) => {
             const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrboxSize = Math.floor(minEdgeSize * 0.7);
+            const qrboxSize = Math.floor(minEdgeSize * 0.78);
             return { width: qrboxSize, height: qrboxSize };
         };
 

@@ -345,8 +345,26 @@ final readonly class BarcodeScanResultHandler
             ];
         } catch (\Throwable $e) {
             error_log('Wuerth GTIN lookup failed: ' . $e::class . ' - ' . $e->getMessage());
-            return null;
         }
+
+        try {
+            error_log('Reichelt GTIN lookup started for ' . $scanResult->gtin);
+
+            $results = $this->infoRetriever->searchByKeyword($scanResult->gtin, ['reichelt']);
+            $best = $results[0] ?? null;
+            if ($best !== null) {
+                error_log('Reichelt GTIN lookup succeeded for ' . $scanResult->gtin);
+
+                return [
+                    'providerKey' => 'reichelt',
+                    'providerId' => $best->provider_id,
+                ];
+            }
+        } catch (\Throwable $e) {
+            error_log('Reichelt GTIN lookup failed: ' . $e::class . ' - ' . $e->getMessage());
+        }
+
+        return null;
     }
 
     /**

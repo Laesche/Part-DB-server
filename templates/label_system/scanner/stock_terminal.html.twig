@@ -26,6 +26,9 @@
 
         <header class="stock-terminal-top">
             <div class="stock-terminal-toolbar">
+                <div class="terminal-status terminal-status--info" {{ stimulus_target('pages/stock-terminal', 'status') }}>
+                    Scan a part or storage label.
+                </div>
                 <button type="button" class="stock-terminal-toolbar__btn" data-action="click->pages--stock-terminal#openSearch" aria-label="Search parts">
                     <i class="fas fa-search"></i>
                 </button>
@@ -33,11 +36,7 @@
                     <i class="fas fa-camera"></i>
                 </button>
             </div>
-            <div class="stock-terminal-eyebrow">Scanner Terminal</div>
             <div class="stock-terminal-active stock-terminal-active--hidden" {{ stimulus_target('pages/stock-terminal', 'locationBanner') }}></div>
-            <div class="terminal-status terminal-status--info" {{ stimulus_target('pages/stock-terminal', 'status') }}>
-                Scan a part or storage label.
-            </div>
         </header>
 
         <main class="stock-terminal-main">
@@ -208,7 +207,7 @@
 
         .terminal-notice {
             position: fixed;
-            top: max(0.75rem, env(safe-area-inset-top));
+            bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 0.35rem);
             left: 50%;
             transform: translateX(-50%);
             width: min(calc(100vw - 1.2rem), 34rem);
@@ -227,6 +226,8 @@
             box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
             border: 1px solid rgba(255, 255, 255, 0.14);
             backdrop-filter: blur(10px);
+            max-height: min(30vh, 12rem);
+            overflow-y: auto;
         }
 
         .terminal-notice__icon {
@@ -254,10 +255,10 @@
         }
 
         .stock-terminal-toolbar {
-            display: flex;
-            justify-content: flex-end;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            align-items: center;
             gap: 0.6rem;
-            margin-bottom: 0.75rem;
         }
 
         .stock-terminal-toolbar__btn {
@@ -312,13 +313,15 @@
 
         .terminal-status {
             border-radius: 1rem;
-            padding: 0.85rem 1rem;
+            padding: 0.65rem 0.9rem;
             border: 1px solid transparent;
             backdrop-filter: blur(12px);
-            min-height: 4rem;
+            min-height: 3rem;
             display: flex;
             align-items: center;
             box-sizing: border-box;
+            font-size: 0.88rem;
+            line-height: 1.25;
         }
 
         .terminal-status--info {
@@ -352,6 +355,8 @@
         .scanner-stage {
             width: 100%;
             max-width: 70rem;
+            display: flex;
+            justify-content: center;
         }
 
         .scanner-frame {
@@ -363,6 +368,7 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
             min-height: 0;
+            width: min(100%, 68rem);
         }
 
         .scanner-frame__grid {
@@ -384,10 +390,25 @@
             overflow: hidden;
             border-radius: 1.45rem;
             background: rgba(0, 0, 0, 0.28);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #stock-terminal-reader > div {
             height: 100% !important;
+            width: 100% !important;
+        }
+
+        #stock-terminal-reader > div,
+        #stock-terminal-reader > div > div,
+        #stock-terminal-reader section,
+        #stock-terminal-reader section > div {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 100% !important;
+            width: 100% !important;
         }
 
         #stock-terminal-reader video,
@@ -700,9 +721,19 @@
                 padding: max(0.55rem, env(safe-area-inset-top)) 0.65rem max(0.55rem, env(safe-area-inset-bottom)) 0.65rem;
             }
 
+            .terminal-status {
+                font-size: 0.8rem;
+                padding: 0.55rem 0.75rem;
+                min-height: 2.75rem;
+            }
+
             .terminal-action-row,
             .terminal-data-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .terminal-action-row {
+                grid-template-columns: minmax(0, 1fr) auto auto;
             }
 
             .terminal-modal__card {

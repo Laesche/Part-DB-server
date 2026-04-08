@@ -86,7 +86,7 @@ final class PartLotWithdrawAddHelper
         $oldAmount = $partLot->getAmount();
         $partLot->setAmount($oldAmount - $amount);
 
-        $event = PartStockChangedLogEntry::withdraw($partLot, $oldAmount, $partLot->getAmount(), $part->getAmountSum() , $comment, $action_timestamp);
+        $event = PartStockChangedLogEntry::withdraw($partLot, $oldAmount, $partLot->getAmount(), $part->getAmountSum() , $comment ?? '', $action_timestamp);
         $this->eventLogger->log($event);
 
         //Apply the comment also to global events, so it gets associated with the elementChanged log entry
@@ -129,7 +129,7 @@ final class PartLotWithdrawAddHelper
         $oldAmount = $partLot->getAmount();
         $partLot->setAmount($oldAmount + $amount);
 
-        $event = PartStockChangedLogEntry::add($partLot, $oldAmount, $partLot->getAmount(), $part->getAmountSum() , $comment, $action_timestamp);
+        $event = PartStockChangedLogEntry::add($partLot, $oldAmount, $partLot->getAmount(), $part->getAmountSum() , $comment ?? '', $action_timestamp);
         $this->eventLogger->log($event);
 
         //Apply the comment also to global events, so it gets associated with the elementChanged log entry
@@ -185,7 +185,7 @@ final class PartLotWithdrawAddHelper
         //And add it to the target
         $target->setAmount($target->getAmount() + $amount);
 
-        $event = PartStockChangedLogEntry::move($origin, $oldOriginAmount, $origin->getAmount(), $part->getAmountSum() , $comment, $target, $action_timestamp);
+        $event = PartStockChangedLogEntry::move($origin, $oldOriginAmount, $origin->getAmount(), $part->getAmountSum() , $comment ?? '', $target, $action_timestamp);
         $this->eventLogger->log($event);
 
         //Apply the comment also to global events, so it gets associated with the elementChanged log entry
@@ -230,7 +230,7 @@ final class PartLotWithdrawAddHelper
             $lot->setLastStocktakeAt(new \DateTimeImmutable()); //Use now if no timestamp is given
         }
 
-        $event = PartStockChangedLogEntry::stocktake($lot, $oldAmount, $lot->getAmount(), $part->getAmountSum() , $comment, $action_timestamp);
+        $event = PartStockChangedLogEntry::stocktake($lot, $oldAmount, $lot->getAmount(), $part->getAmountSum() , $comment ?? '', $action_timestamp);
         $this->eventLogger->log($event);
 
         //Apply the comment also to global events, so it gets associated with the elementChanged log entry
