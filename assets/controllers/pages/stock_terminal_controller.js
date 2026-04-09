@@ -63,6 +63,7 @@ export default class extends Controller {
         }
 
         this._startReaderOverlayCleanup();
+        this._setBusy(false); // Ensure overlay is hidden on page load
         this._scanner = new Html5Qrcode(this.readerTarget.id);
         await this._initializeScanner();
     }
