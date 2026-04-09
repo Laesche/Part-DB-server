@@ -44,6 +44,12 @@
                 <div class="scanner-frame">
                     <div class="scanner-frame__grid"></div>
                     <div id="stock-terminal-reader" {{ stimulus_target('pages/stock-terminal', 'reader') }}></div>
+                    <div class="scanner-busy-overlay d-none" {{ stimulus_target('pages/stock-terminal', 'busyOverlay') }}>
+                        <div class="scanner-busy-overlay__content">
+                            <div class="scanner-busy-spinner"></div>
+                            <div class="scanner-busy-label">Processing...</div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -435,6 +441,47 @@
 
         #stock-terminal-reader img {
             display: none !important;
+        }
+
+        .scanner-busy-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(16, 38, 31, 0.78);
+            backdrop-filter: blur(3px);
+            border-radius: 1.45rem;
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+
+        .scanner-busy-overlay__content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .scanner-busy-spinner {
+            width: 3.5rem;
+            height: 3.5rem;
+            border: 3px solid rgba(247, 189, 108, 0.2);
+            border-top-color: #f7bd6c;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .scanner-busy-label {
+            color: #f4efe4;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .stock-terminal-footer {

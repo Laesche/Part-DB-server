@@ -34,6 +34,7 @@ export default class extends Controller {
         "searchModal",
         "searchInput",
         "searchResults",
+        "busyOverlay",
     ];
 
     static values = {
@@ -101,7 +102,7 @@ export default class extends Controller {
             return;
         }
 
-        this._busy = true;
+        this._setBusy(true);
         this._lastDecodedText = normalized;
         this._setStatus("Processing scan...", "info");
 
@@ -123,7 +124,7 @@ export default class extends Controller {
             if (!response.ok || !data.ok) {
                 this._setStatus(data.message || "No result for this scan.", "warning");
                 this._showNotice(data.message || "This code cannot be used here.");
-                this._busy = false;
+                this._setBusy(false);
                 return;
             }
 
@@ -147,7 +148,7 @@ export default class extends Controller {
             this._showNotice("Failed to process the scan.");
         }
 
-        this._busy = false;
+        this._setBusy(false);
     }
 
     closeModal() {
@@ -591,5 +592,17 @@ export default class extends Controller {
             return "Facing back";
         }
         return "Camera";
+    }
+
+    _setBusy(busy) {
+        this._busy = busy;
+        if (!this.hasBusyOverlayTarget) {
+            return;
+        }
+        if (busy) {
+            this.busyOverlayTarget.classList.remove("d-none");
+        } else {
+            this.busyOverlayTarget.classList.add("d-none");
+        }
     }
 }
