@@ -58,6 +58,7 @@ use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultHandler;
 use App\Services\LabelSystem\BarcodeScanner\EIGP114BarcodeScanResult;
 use App\Services\LabelSystem\BarcodeScanner\LocalBarcodeScanResult;
 use App\Services\Parts\PartLotWithdrawAddHelper;
+use App\Services\Parts\CategorySuggestionService;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityNotFoundException;
@@ -81,12 +82,14 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 class ScanController extends AbstractController
 {
     private const QUICK_ADD_SESSION_KEY = 'scan.quick_add.pending';
+    private const MANUAL_REVIEW_PROVIDER_KEYS = ['google_last_resort'];
 
     public function __construct(
         protected BarcodeScanResultHandler $resultHandler,
         protected BarcodeScanHelper $barcodeNormalizer,
         private readonly PartPreviewGenerator $partPreviewGenerator,
         private readonly AttachmentURLGenerator $attachmentURLGenerator,
+        private readonly CategorySuggestionService $categorySuggestionService,
     ) {}
 
     #[Route(path: '', name: 'scan_dialog')]
@@ -367,6 +370,13 @@ class ScanController extends AbstractController
             return $this->json(['ok' => false, 'message' => 'This barcode cannot be used to create a part.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        if ($this->providerRequiresManualReview($createInfos)) {
+            return $this->json([
+                'ok' => true,
+                'redirectUrl' => $this->buildInfoProviderCreateRedirectUrl($createInfos),
+            ]);
+        }
+
         $derivedLotBarcode = trim((string) ($createInfos['lotUserBarcode'] ?? ''));
         if ($derivedLotBarcode !== '') {
             $existingDerivedLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $derivedLotBarcode]);
@@ -431,7 +441,7 @@ class ScanController extends AbstractController
         $autoCategory = $previewPart->getCategory();
         $autoCategoryPath = null;
         if (!$autoCategory instanceof Category || $autoCategory->isNotSelectable()) {
-            $providerCategoryPath = $this->normalizeCategoryPath((string) ($dto->category ?? ''));
+            $providerCategoryPath = $this->determineAutoCategoryPath($dto);
             if ($providerCategoryPath !== null) {
                 $autoCategoryPath = $providerCategoryPath;
             } else {
@@ -786,6 +796,14 @@ class ScanController extends AbstractController
             return $this->json(['ok' => false, 'message' => 'This barcode cannot be used to allocate a part.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        if ($this->providerRequiresManualReview($createInfos)) {
+            return $this->json([
+                'ok' => true,
+                'redirectUrl' => $this->buildInfoProviderCreateRedirectUrl($createInfos),
+                'message' => 'Web lookup found a possible product. Review it on the add-part screen before saving.',
+            ]);
+        }
+
         $derivedLotBarcode = trim((string) ($createInfos['lotUserBarcode'] ?? ''));
         if ($derivedLotBarcode !== '') {
             $existingDerivedLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $derivedLotBarcode]);
@@ -812,7 +830,7 @@ class ScanController extends AbstractController
 
         $autoCategory = $part->getCategory();
         if (!$autoCategory instanceof Category || $autoCategory->isNotSelectable()) {
-            $providerCategoryPath = $this->normalizeCategoryPath((string) ($dto->category ?? ''));
+            $providerCategoryPath = $this->determineAutoCategoryPath($dto);
             if ($providerCategoryPath !== null) {
                 $part->setCategory($this->findOrCreateCategoryPath($em, $providerCategoryPath));
             } else {
@@ -1025,6 +1043,14 @@ class ScanController extends AbstractController
             return $this->json(['ok' => false, 'message' => 'This barcode cannot be used here.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        if ($this->providerRequiresManualReview($createInfos)) {
+            return $this->json([
+                'ok' => true,
+                'redirectUrl' => $this->buildInfoProviderCreateRedirectUrl($createInfos),
+                'message' => 'Web lookup found a possible product. Review it on the add-part screen before saving.',
+            ]);
+        }
+
         $derivedLotBarcode = trim((string) ($createInfos['lotUserBarcode'] ?? ''));
         if ($derivedLotBarcode !== '') {
             $existingDerivedLot = $em->getRepository(PartLot::class)->findOneBy(['user_barcode' => $derivedLotBarcode]);
@@ -1067,7 +1093,7 @@ class ScanController extends AbstractController
 
         $autoCategory = $part->getCategory();
         if (!$autoCategory instanceof Category || $autoCategory->isNotSelectable()) {
-            $providerCategoryPath = $this->normalizeCategoryPath((string) ($dto->category ?? ''));
+            $providerCategoryPath = $this->determineAutoCategoryPath($dto);
             if ($providerCategoryPath !== null) {
                 $part->setCategory($this->findOrCreateCategoryPath($em, $providerCategoryPath));
             } else {
@@ -1341,6 +1367,46 @@ class ScanController extends AbstractController
         } while ($isEigp114);
 
         return $dto;
+    }
+
+    private function providerRequiresManualReview(array $createInfos): bool
+    {
+        $providerKey = (string) ($createInfos['providerKey'] ?? '');
+        return in_array($providerKey, self::MANUAL_REVIEW_PROVIDER_KEYS, true);
+    }
+
+    private function buildInfoProviderCreateRedirectUrl(array $createInfos): string
+    {
+        $params = [
+            'providerKey' => (string) $createInfos['providerKey'],
+            'providerId' => (string) $createInfos['providerId'],
+        ];
+
+        if (isset($createInfos['lotAmount'])) {
+            $params['lotAmount'] = (string) $createInfos['lotAmount'];
+        }
+        if (isset($createInfos['lotName'])) {
+            $params['lotName'] = (string) $createInfos['lotName'];
+        }
+        if (isset($createInfos['lotUserBarcode'])) {
+            $params['lotUserBarcode'] = (string) $createInfos['lotUserBarcode'];
+        }
+
+        return $this->generateUrl('info_providers_create_part', $params);
+    }
+
+    private function determineAutoCategoryPath(mixed $dto): ?string
+    {
+        $providerCategoryPath = $this->normalizeCategoryPath((string) ($dto->category ?? ''));
+        if ($providerCategoryPath !== null) {
+            return $providerCategoryPath;
+        }
+
+        return $this->categorySuggestionService->guessCategoryPathFromTexts(
+            is_string($dto->name ?? null) ? $dto->name : null,
+            is_string($dto->description ?? null) ? $dto->description : null,
+            is_string($dto->notes ?? null) ? $dto->notes : null,
+        );
     }
 
     private function buildStockTerminalPartResponse(

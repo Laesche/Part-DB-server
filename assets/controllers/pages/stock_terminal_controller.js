@@ -114,8 +114,15 @@ export default class extends Controller {
 
             const data = await response.json();
             if (!response.ok || !data.ok) {
+                this._setStatus(data.message || "No result for this scan.", "warning");
                 this._showNotice(data.message || "This code cannot be used here.");
                 this._busy = false;
+                return;
+            }
+
+            if (data.redirectUrl) {
+                this._setStatus(data.message || "Open the add-part screen to review this item.", "success");
+                window.location.href = data.redirectUrl;
                 return;
             }
 
@@ -129,6 +136,7 @@ export default class extends Controller {
                 this._showPartModal(data.part);
             }
         } catch (_) {
+            this._setStatus("Scan failed. Please try again.", "warning");
             this._showNotice("Failed to process the scan.");
         }
 

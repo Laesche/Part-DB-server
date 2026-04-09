@@ -110,6 +110,12 @@ export default class extends Controller {
                 return;
             }
 
+            if (data.redirectUrl) {
+                this._setStatus(data.message || "Open the add-part screen to review this item.", "success");
+                window.location.href = data.redirectUrl;
+                return;
+            }
+
             if (data.storageLocationId && data.storageLocationName) {
                 this._currentStorageLocationId = Number(data.storageLocationId) || 0;
                 this._currentStorageLocationName = String(data.storageLocationName);

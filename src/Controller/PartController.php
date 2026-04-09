@@ -46,6 +46,7 @@ use App\Services\LogSystem\TimeTravel;
 use App\Services\Parameters\ParameterExtractor;
 use App\Services\Parts\PartLotWithdrawAddHelper;
 use App\Services\Parts\PricedetailHelper;
+use App\Services\Parts\CategorySuggestionService;
 use App\Services\ProjectSystem\ProjectBuildPartHelper;
 use App\Settings\BehaviorSettings\PartInfoSettings;
 use App\Settings\MiscSettings\IpnSuggestSettings;
@@ -78,6 +79,7 @@ final class PartController extends AbstractController
         private readonly AttachmentSubmitHandler $attachmentSubmitHandler,
         private readonly EntityManagerInterface $em,
         private readonly EventCommentHelper $commentHelper,
+        private readonly CategorySuggestionService $categorySuggestionService,
         private readonly PartInfoSettings $partInfoSettings,
         private readonly IpnSuggestSettings $ipnSuggestSettings,
         #[Autowire('%env(bool:WUERTH_LLM_DEBUG)%')]
@@ -322,6 +324,7 @@ final class PartController extends AbstractController
         $new_part = $infoRetriever->dtoToPart($dto);
 
         $providerCategoryPath = is_string($dto->category) ? $this->normalizeCategoryPath($dto->category) : null;
+        $providerCategoryPath ??= $this->categorySuggestionService->guessCategoryPathFromTexts($dto->name, $dto->description, $dto->notes);
         if ($new_part->getCategory() === null && $providerCategoryPath !== null) {
             $new_part->setCategory($this->findOrCreateCategoryPath($providerCategoryPath));
             if ($new_part->getCategory()?->getID() === null) {

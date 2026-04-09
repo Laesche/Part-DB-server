@@ -370,6 +370,26 @@ final readonly class BarcodeScanResultHandler
             error_log('Reichelt GTIN lookup failed: ' . $e::class . ' - ' . $e->getMessage());
         }
 
+        try {
+            error_log('Google last-resort GTIN lookup started for ' . $scanResult->gtin);
+
+            $provider = $this->providerRegistry->getProviderByKey('google_last_resort');
+            if ($provider->isActive()) {
+                $results = $provider->searchByKeyword($scanResult->gtin);
+                $best = $results[0] ?? null;
+                if ($best !== null) {
+                    error_log('Google last-resort GTIN lookup succeeded for ' . $scanResult->gtin);
+
+                    return [
+                        'providerKey' => 'google_last_resort',
+                        'providerId' => $best->provider_id,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('Google last-resort GTIN lookup failed: ' . $e::class . ' - ' . $e->getMessage());
+        }
+
         return null;
     }
 

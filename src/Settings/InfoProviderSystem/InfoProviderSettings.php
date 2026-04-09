@@ -41,6 +41,9 @@ class InfoProviderSettings
     public ?GenericWebProviderSettings $genericWebProvider = null;
 
     #[EmbeddedSettings]
+    public ?GoogleLastResortSettings $googleLastResort = null;
+
+    #[EmbeddedSettings]
     public ?DigikeySettings $digikey = null;
 
     #[EmbeddedSettings]
