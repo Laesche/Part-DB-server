@@ -530,6 +530,8 @@ export default class extends Controller {
             childList: true,
             subtree: true,
             characterData: true,
+            attributes: true,
+            attributeFilter: ["style", "class", "aria-hidden"],
         });
 
         this._hideReaderStatusOverlays();
@@ -555,11 +557,15 @@ export default class extends Controller {
 
             element.setAttribute("aria-hidden", "true");
             element.style.display = "none";
+            element.style.visibility = "hidden";
+            element.style.pointerEvents = "none";
 
             const parent = element.parentElement;
             if (parent && parent.children.length <= 2) {
                 parent.setAttribute("aria-hidden", "true");
                 parent.style.display = "none";
+                parent.style.visibility = "hidden";
+                parent.style.pointerEvents = "none";
             }
         });
     }
