@@ -129,25 +129,7 @@ final class GoogleLastResortProvider implements InfoProviderInterface
      */
     private function resolveFirstProduct(string $gtin): ?array
     {
-        $searchResponse = $this->httpClient->request('GET', 'https://www.google.com/search', [
-            'query' => [
-                'q' => $gtin,
-                'hl' => $this->settings->language,
-                'gl' => strtoupper($this->settings->country),
-                'num' => 10,
-            ],
-        ]);
-
-        $html = $searchResponse->getContent();
-        $dom = new Crawler($html);
-
-        foreach ($dom->filter('a[href]') as $element) {
-            $href = (string) ($element->getAttribute('href') ?? '');
-            $targetUrl = $this->extractTargetUrl($href);
-            if ($targetUrl === null) {
-                continue;
-            }
-
+        foreach ($this->fetchCandidateUrls($gtin) as $targetUrl) {
             $details = $this->fetchProductPageDetails($gtin, $targetUrl);
             if ($details !== null) {
                 return $details;
@@ -155,6 +137,65 @@ final class GoogleLastResortProvider implements InfoProviderInterface
         }
 
         return null;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function fetchCandidateUrls(string $gtin): array
+    {
+        $candidates = [];
+
+        try {
+            $searchResponse = $this->httpClient->request('GET', 'https://www.google.com/search', [
+                'query' => [
+                    'q' => $gtin,
+                    'hl' => $this->settings->language,
+                    'gl' => strtoupper($this->settings->country),
+                    'num' => 10,
+                ],
+            ]);
+
+            $html = $searchResponse->getContent();
+            $dom = new Crawler($html);
+
+            foreach ($dom->filter('a[href]') as $element) {
+                $href = (string) ($element->getAttribute('href') ?? '');
+                $targetUrl = $this->extractGoogleTargetUrl($href);
+                if ($targetUrl !== null) {
+                    $candidates[] = $targetUrl;
+                }
+            }
+        } catch (\Throwable) {
+            // Google often rate-limits or returns JS-only pages for server-side requests.
+        }
+
+        if ($candidates !== []) {
+            return array_values(array_unique($candidates));
+        }
+
+        try {
+            $searchResponse = $this->httpClient->request('GET', 'https://html.duckduckgo.com/html/', [
+                'query' => [
+                    'q' => $gtin,
+                ],
+            ]);
+
+            $html = $searchResponse->getContent();
+            $dom = new Crawler($html);
+
+            foreach ($dom->filter('a.result__a[href]') as $element) {
+                $href = (string) ($element->getAttribute('href') ?? '');
+                $targetUrl = $this->extractDuckDuckGoTargetUrl($href);
+                if ($targetUrl !== null) {
+                    $candidates[] = $targetUrl;
+                }
+            }
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return array_values(array_unique($candidates));
     }
 
     /**
@@ -238,7 +279,7 @@ final class GoogleLastResortProvider implements InfoProviderInterface
         return null;
     }
 
-    private function extractTargetUrl(string $href): ?string
+    private function extractGoogleTargetUrl(string $href): ?string
     {
         if ($href === '') {
             return null;
@@ -261,6 +302,35 @@ final class GoogleLastResortProvider implements InfoProviderInterface
 
         $host = strtolower((string) parse_url($candidate, PHP_URL_HOST));
         if ($host === '' || str_contains($host, 'google.')) {
+            return null;
+        }
+
+        return $candidate;
+    }
+
+    private function extractDuckDuckGoTargetUrl(string $href): ?string
+    {
+        if ($href === '') {
+            return null;
+        }
+
+        $candidate = null;
+        if (str_starts_with($href, '//duckduckgo.com/l/?')) {
+            $query = parse_url('https:' . $href, PHP_URL_QUERY);
+            if (is_string($query) && $query !== '') {
+                parse_str($query, $params);
+                $candidate = is_string($params['uddg'] ?? null) ? urldecode($params['uddg']) : null;
+            }
+        } elseif (preg_match('#^https?://#i', $href) === 1) {
+            $candidate = $href;
+        }
+
+        if (!is_string($candidate) || filter_var($candidate, FILTER_VALIDATE_URL) === false) {
+            return null;
+        }
+
+        $host = strtolower((string) parse_url($candidate, PHP_URL_HOST));
+        if ($host === '' || str_contains($host, 'duckduckgo.')) {
             return null;
         }
 

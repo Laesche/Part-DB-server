@@ -128,6 +128,9 @@ class InfoProviderController extends  AbstractController
         $form->handleRequest($request);
 
         $results = null;
+        $autostart = $request->query->getBoolean('autostart');
+        $autofillKeyword = trim((string) $request->query->get('autofill_keyword', ''));
+        $autofillProvider = trim((string) $request->query->get('autofill_provider', ''));
 
         //When we are updating a part, use its name as keyword, to make searching easier
         //However we can only do this, if the form was not submitted yet
@@ -149,6 +152,21 @@ class InfoProviderController extends  AbstractController
                     //If the provider is not found, just ignore it
                 }
             }
+        } elseif (!$form->isSubmitted()) {
+            if ($autofillKeyword !== '') {
+                $form->get('keyword')->setData($autofillKeyword);
+            }
+
+            if ($autofillProvider !== '') {
+                try {
+                    $provider = $this->providerRegistry->getProviderByKey($autofillProvider);
+                    if ($provider->isActive()) {
+                        $form->get('providers')->setData([$provider]);
+                    }
+                } catch (\InvalidArgumentException) {
+                    //Ignore invalid provider keys from query params
+                }
+            }
         }
 
         //If the providers form is still empty, use our default value from the settings
@@ -168,7 +186,7 @@ class InfoProviderController extends  AbstractController
             $form->get('providers')->setData($provider_objects);
         }
 
-        if ($form->isSubmitted() && $form->isValid()) {
+        if (($form->isSubmitted() && $form->isValid()) || ($autostart && !$form->isSubmitted())) {
             $keyword = $form->get('keyword')->getData();
             $providers = $form->get('providers')->getData();
 

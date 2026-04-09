@@ -54,12 +54,14 @@ export default class extends Controller {
     _activeStorage = null;
     _cameras = [];
     _searchTimer = null;
+    _readerObserver = null;
 
     async connect() {
         if (this._scanner) {
             return;
         }
 
+        this._startReaderOverlayCleanup();
         this._scanner = new Html5Qrcode(this.readerTarget.id);
         await this._initializeScanner();
     }
@@ -67,6 +69,11 @@ export default class extends Controller {
     async disconnect() {
         if (this._searchTimer) {
             clearTimeout(this._searchTimer);
+        }
+
+        if (this._readerObserver) {
+            this._readerObserver.disconnect();
+            this._readerObserver = null;
         }
 
         await this._stopScanner();
@@ -322,6 +329,7 @@ export default class extends Controller {
                 () => {}
             );
             this._scannerRunning = true;
+            this._hideReaderStatusOverlays();
             this._setStatus("Scanner ready. Point the camera at a code.", "info");
         } catch (_) {
             this._showCameraModal();
@@ -508,6 +516,52 @@ export default class extends Controller {
 
         this.noticeTextTarget.textContent = message;
         this.noticeTarget.classList.remove("d-none");
+    }
+
+    _startReaderOverlayCleanup() {
+        if (!this.hasReaderTarget || this._readerObserver) {
+            return;
+        }
+
+        this._readerObserver = new MutationObserver(() => {
+            this._hideReaderStatusOverlays();
+        });
+        this._readerObserver.observe(this.readerTarget, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+
+        this._hideReaderStatusOverlays();
+    }
+
+    _hideReaderStatusOverlays() {
+        if (!this.hasReaderTarget) {
+            return;
+        }
+
+        const overlayTexts = new Set([
+            "scanner paused",
+            "scanner stopped",
+            "camera stopped",
+            "idle",
+        ]);
+
+        this.readerTarget.querySelectorAll("*").forEach((element) => {
+            const text = String(element.textContent || "").trim().toLowerCase();
+            if (!text || !overlayTexts.has(text)) {
+                return;
+            }
+
+            element.setAttribute("aria-hidden", "true");
+            element.style.display = "none";
+
+            const parent = element.parentElement;
+            if (parent && parent.children.length <= 2) {
+                parent.setAttribute("aria-hidden", "true");
+                parent.style.display = "none";
+            }
+        });
     }
 
     _formatAmount(value) {

@@ -280,6 +280,11 @@ final class PartController extends AbstractController
             $new_part->addOrderdetail($orderdetail);
         }
 
+        $gtin = trim((string) $request->query->get('gtin', ''));
+        if ($gtin !== '' && trim((string) $new_part->getGtin()) === '') {
+            $new_part->setGtin($gtin);
+        }
+
         return $this->renderPartForm('new', $request, $new_part);
     }
 
@@ -316,6 +321,17 @@ final class PartController extends AbstractController
                 }
 
                 return $this->redirect('/en/tools/info_providers/search?' . http_build_query($params));
+            }
+
+            if ($providerKey === 'google_last_resort') {
+                $this->addFlash('warning', 'Google last-resort import failed. Opening a blank part form with the scanned GTIN filled in.');
+
+                $gtin = $this->extractGoogleLastResortGtin($providerId);
+                if ($gtin !== null) {
+                    return $this->redirectToRoute('part_new', ['gtin' => $gtin]);
+                }
+
+                return $this->redirectToRoute('part_new');
             }
 
             throw $e;
@@ -412,6 +428,30 @@ final class PartController extends AbstractController
         }
 
         return implode(' -> ', $segments);
+    }
+
+    private function extractGoogleLastResortGtin(string $providerId): ?string
+    {
+        $normalized = strtr($providerId, '-_', '+/');
+        $padding = strlen($normalized) % 4;
+        if ($padding > 0) {
+            $normalized .= str_repeat('=', 4 - $padding);
+        }
+
+        $decoded = base64_decode($normalized, true);
+        if (is_string($decoded)) {
+            $data = json_decode($decoded, true);
+            if (is_array($data) && is_string($data['gtin'] ?? null) && $data['gtin'] !== '') {
+                return $data['gtin'];
+            }
+        }
+
+        $digits = preg_replace('/\D+/', '', $providerId);
+        if (!is_string($digits) || $digits === '') {
+            return null;
+        }
+
+        return $digits;
     }
 
     #[Route('/{target}/merge/{other}', name: 'part_merge')]
