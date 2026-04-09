@@ -1041,11 +1041,7 @@ class ScanController extends AbstractController
 
         $isEigp114 = $scan instanceof EIGP114BarcodeScanResult;
         if ($createInfos === null) {
-            return $this->json([
-                'ok' => true,
-                'redirectUrl' => $this->buildManualPartCreateRedirectUrl($input, $scan, $currentLocation instanceof StorageLocation ? $currentLocation : null),
-                'message' => 'No provider data was found. Opening the add-part form with the scanned barcode linked.',
-            ]);
+            return $this->json(['ok' => false, 'message' => 'This barcode cannot be used here.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($this->providerRequiresManualReview($createInfos)) {
