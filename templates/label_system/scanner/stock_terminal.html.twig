@@ -401,9 +401,7 @@
         }
 
         #stock-terminal-reader > div,
-        #stock-terminal-reader > div > div,
-        #stock-terminal-reader section,
-        #stock-terminal-reader section > div {
+        #stock-terminal-reader > div > div {
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -427,6 +425,12 @@
 
         #stock-terminal-reader section > div {
             background: transparent !important;
+        }
+
+        #stock-terminal-reader [id^="stock-terminal-reader__dashboard"],
+        #stock-terminal-reader [id^="stock-terminal-reader__camera_selection"],
+        #stock-terminal-reader [id^="stock-terminal-reader__status_span"] {
+            display: none !important;
         }
 
         #stock-terminal-reader img {
