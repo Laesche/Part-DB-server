@@ -332,17 +332,16 @@ final readonly class BarcodeScanResultHandler
             $provider = $this->providerRegistry->getProviderByKey('wuerth');
             if (!$provider->isActive() || !$provider instanceof WuerthProvider) {
                 error_log('Wuerth GTIN lookup aborted: provider not active or wrong type');
-                return null;
+            } else {
+                $provider->getDetails($scanResult->gtin);
+
+                error_log('Wuerth GTIN lookup succeeded for ' . $scanResult->gtin);
+
+                return [
+                    'providerKey' => 'wuerth',
+                    'providerId' => $scanResult->gtin,
+                ];
             }
-
-            $provider->getDetails($scanResult->gtin);
-
-            error_log('Wuerth GTIN lookup succeeded for ' . $scanResult->gtin);
-
-            return [
-                'providerKey' => 'wuerth',
-                'providerId' => $scanResult->gtin,
-            ];
         } catch (\Throwable $e) {
             error_log('Wuerth GTIN lookup failed: ' . $e::class . ' - ' . $e->getMessage());
         }
@@ -351,7 +350,14 @@ final readonly class BarcodeScanResultHandler
             error_log('Reichelt GTIN lookup started for ' . $scanResult->gtin);
 
             $results = $this->infoRetriever->searchByKeyword($scanResult->gtin, ['reichelt']);
-            $best = $results[0] ?? null;
+            $best = null;
+            foreach ($results as $result) {
+                if (($result->gtin ?? null) === $scanResult->gtin) {
+                    $best = $result;
+                    break;
+                }
+            }
+            $best ??= $results[0] ?? null;
             if ($best !== null) {
                 error_log('Reichelt GTIN lookup succeeded for ' . $scanResult->gtin);
 
