@@ -285,6 +285,30 @@ final class PartController extends AbstractController
             $new_part->setGtin($gtin);
         }
 
+        if (!$part instanceof Part && !$project instanceof Project) {
+            $lotAmount = $request->query->get('lotAmount');
+            $lotName = trim((string) $request->query->get('lotName', ''));
+            $lotUserBarcode = trim((string) $request->query->get('lotUserBarcode', ''));
+
+            if ($lotAmount !== null || $lotName !== '' || $lotUserBarcode !== '') {
+                $partLot = $new_part->getPartLots()->first();
+                if (!$partLot instanceof PartLot) {
+                    $partLot = new PartLot();
+                    $new_part->addPartLot($partLot);
+                }
+
+                if ($lotAmount !== null && is_numeric((string) $lotAmount)) {
+                    $partLot->setAmount((float) $lotAmount);
+                }
+                if ($lotName !== '') {
+                    $partLot->setDescription($lotName);
+                }
+                if ($lotUserBarcode !== '') {
+                    $partLot->setUserBarcode($lotUserBarcode);
+                }
+            }
+        }
+
         return $this->renderPartForm('new', $request, $new_part);
     }
 

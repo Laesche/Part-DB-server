@@ -56,6 +56,7 @@ use App\Services\LabelSystem\BarcodeScanner\BarcodeScanHelper;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeSourceType;
 use App\Services\LabelSystem\BarcodeScanner\BarcodeScanResultHandler;
 use App\Services\LabelSystem\BarcodeScanner\EIGP114BarcodeScanResult;
+use App\Services\LabelSystem\BarcodeScanner\GTINBarcodeScanResult;
 use App\Services\LabelSystem\BarcodeScanner\LocalBarcodeScanResult;
 use App\Services\Parts\PartLotWithdrawAddHelper;
 use App\Services\Parts\CategorySuggestionService;
@@ -1040,7 +1041,11 @@ class ScanController extends AbstractController
 
         $isEigp114 = $scan instanceof EIGP114BarcodeScanResult;
         if ($createInfos === null) {
-            return $this->json(['ok' => false, 'message' => 'This barcode cannot be used here.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->json([
+                'ok' => true,
+                'redirectUrl' => $this->buildManualPartCreateRedirectUrl($input, $scan, $currentLocation instanceof StorageLocation ? $currentLocation : null),
+                'message' => 'No provider data was found. Opening the add-part form with the scanned barcode linked.',
+            ]);
         }
 
         if ($this->providerRequiresManualReview($createInfos)) {
@@ -1078,11 +1083,17 @@ class ScanController extends AbstractController
         $dto = $this->fetchProviderDto($infoRetriever, $createInfos, $isEigp114);
         if ($dto === null) {
             return $this->json([
-                'ok' => false,
+                'ok' => true,
+                'redirectUrl' => $this->buildManualPartCreateRedirectUrl(
+                    $input,
+                    $scan,
+                    $currentLocation instanceof StorageLocation ? $currentLocation : null,
+                    $createInfos
+                ),
                 'message' => $isEigp114
-                    ? 'Provider information is not available yet after waiting 20 seconds. Please scan again.'
-                    : 'Failed to load provider details for this barcode.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                    ? 'Provider information is not available yet after waiting 20 seconds. Opening the add-part form with the scanned barcode linked.'
+                    : 'Provider lookup failed. Opening the add-part form with the scanned barcode linked.',
+            ]);
         }
 
         try {
@@ -1393,6 +1404,35 @@ class ScanController extends AbstractController
         }
 
         return $this->generateUrl('info_providers_create_part', $params);
+    }
+
+    private function buildManualPartCreateRedirectUrl(
+        string $input,
+        ?BarcodeScanResultInterface $scanResult = null,
+        ?StorageLocation $storageLocation = null,
+        ?array $createInfos = null,
+    ): string {
+        $params = [];
+
+        $linkedBarcode = trim((string) ($createInfos['lotUserBarcode'] ?? $input));
+        if ($linkedBarcode !== '') {
+            $params['lotUserBarcode'] = $linkedBarcode;
+        }
+
+        if (isset($createInfos['lotAmount'])) {
+            $params['lotAmount'] = (string) $createInfos['lotAmount'];
+        }
+        if (isset($createInfos['lotName'])) {
+            $params['lotName'] = (string) $createInfos['lotName'];
+        }
+        if ($scanResult instanceof GTINBarcodeScanResult) {
+            $params['gtin'] = $scanResult->gtin;
+        }
+        if ($storageLocation instanceof StorageLocation) {
+            $params['storelocation'] = $storageLocation->getID();
+        }
+
+        return $this->generateUrl('part_new', $params);
     }
 
     private function determineAutoCategoryPath(mixed $dto): ?string
