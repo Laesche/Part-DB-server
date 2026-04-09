@@ -449,10 +449,13 @@
             background: rgba(16, 38, 31, 0.78);
             backdrop-filter: blur(3px);
             border-radius: 1.45rem;
-            display: flex !important;
             align-items: center;
             justify-content: center;
             z-index: 50;
+        }
+
+        .scanner-busy-overlay:not(.d-none) {
+            display: flex !important;
         }
 
         .scanner-busy-overlay__content {
