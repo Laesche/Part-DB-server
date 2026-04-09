@@ -130,6 +130,7 @@ export default class extends Controller {
 
             if (data.redirectUrl) {
                 this._setStatus(data.message || "Open the add-part screen to review this item.", "success");
+                this._setBusy(false);
                 window.location.href = data.redirectUrl;
                 return;
             }
