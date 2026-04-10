@@ -9,6 +9,7 @@
         partDetailsUrlTemplate: path('scan_stock_terminal_part', {'id': '__ID__'}),
         searchUrlTemplate: path('typeahead_parts', {'query': '__QUERY__'}),
         partUrlTemplate: path('part_info', {'id': '__ID__'}),
+        printerReturnUrl: path('scan_stock_terminal'),
         csrfToken: csrfToken
     }) }}>
         <div class="stock-terminal-bg stock-terminal-bg--one"></div>
@@ -29,6 +30,9 @@
                 <div class="terminal-status terminal-status--info" {{ stimulus_target('pages/stock-terminal', 'status') }}>
                     Scan a part or storage label.
                 </div>
+                <button type="button" class="stock-terminal-toolbar__btn stock-terminal-toolbar__btn--queue" data-action="click->pages--stock-terminal#printQueue" aria-label="Print queued labels">
+                    <i class="fas fa-print"></i>
+                </button>
                 <button type="button" class="stock-terminal-toolbar__btn" data-action="click->pages--stock-terminal#openSearch" aria-label="Search parts">
                     <i class="fas fa-search"></i>
                 </button>
@@ -37,6 +41,7 @@
                 </button>
             </div>
             <div class="stock-terminal-active stock-terminal-active--hidden" {{ stimulus_target('pages/stock-terminal', 'locationBanner') }}></div>
+            <div class="stock-terminal-active stock-terminal-active--hidden" {{ stimulus_target('pages/stock-terminal', 'queueBanner') }}></div>
         </header>
 
         <main class="stock-terminal-main">
@@ -262,7 +267,7 @@
 
         .stock-terminal-toolbar {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto auto;
+            grid-template-columns: minmax(0, 1fr) auto auto auto;
             align-items: center;
             gap: 0.6rem;
         }
@@ -275,6 +280,11 @@
             background: rgba(255, 255, 255, 0.08);
             color: #f6f0df;
             backdrop-filter: blur(10px);
+        }
+
+        .stock-terminal-toolbar__btn--queue {
+            background: rgba(29, 184, 154, 0.18);
+            border-color: rgba(29, 184, 154, 0.35);
         }
 
         .stock-terminal-eyebrow,
@@ -315,6 +325,10 @@
 
         .terminal-chip--danger {
             background: #7e2a2a;
+        }
+
+        .terminal-chip--primary {
+            background: #1d5f90;
         }
 
         .terminal-status {

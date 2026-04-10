@@ -174,6 +174,7 @@ const state = {
   templateData: [],       // Array of data records for batch printing
   selectedRecords: [],    // Indices of selected records for printing
   currentPreviewIndex: 0, // Current label index in full preview
+  printQueue: [],         // Array of incoming queued autolabel payloads
   // Inline text editing state
   editingTextId: null,    // ID of text element being inline-edited
   // Undo/Redo history
@@ -7000,6 +7001,127 @@ function decodeAutoLabelPayload(encoded) {
   }
 }
 
+async function handlePrintQueue() {
+  const queue = state.printQueue;
+  if (queue.length === 0) {
+    showToast('No queued labels to print', 'warning');
+    return;
+  }
+
+  const btn = $('#print-queue-btn');
+  const mobileBtn = $('#mobile-print-queue-btn');
+  const originalText = btn?.textContent || 'Print Queue';
+  const originalMobileText = mobileBtn?.textContent || 'Queue';
+  const { density, copies, feed, printerModel } = state.printSettings;
+
+  try {
+    if (btn) btn.disabled = true;
+    if (mobileBtn) mobileBtn.disabled = true;
+
+    if (!state.transport || !state.transport.isConnected()) {
+      setStatus('Connecting...');
+      await handleConnect();
+
+      if (!state.transport || !state.transport.isConnected()) {
+        throw new Error('Please connect to printer first');
+      }
+    }
+
+    showPrintProgress(`Printing ${queue.length} queued label${queue.length !== 1 ? 's' : ''}`, queue.length);
+
+    for (let index = 0; index < queue.length; index++) {
+      if (isPrintCancelled()) {
+        showToast(`Queue printing cancelled after ${index} label${index !== 1 ? 's' : ''}`, 'warning');
+        break;
+      }
+
+      const payload = decodeAutoLabelPayload(queue[index]);
+      if (!applyAutoLabelPayload(payload)) {
+        continue;
+      }
+      render();
+      updatePrintProgress(index + 1, queue.length, `Printing label ${index + 1}...`);
+
+      if (btn) btn.textContent = `Printing ${index + 1}/${queue.length}...`;
+      if (mobileBtn) mobileBtn.textContent = `${index + 1}/${queue.length}`;
+
+      const elementsToRender = evaluateExpressions(state.elements);
+      const deviceName = state.transport.getDeviceName?.() || '';
+      const printerWidth = getPrinterWidthBytes(deviceName, printerModel);
+      const printerDpi = getPrinterDpi(deviceName, printerModel);
+      const printerAlignment = getPrinterAlignment(deviceName, printerModel);
+      let ditherMode = getDitherMode(elementsToRender);
+      if (ditherMode === 'auto' && isTSPLPrinter(deviceName, printerModel)) {
+        ditherMode = 'threshold';
+      }
+
+      const rasterData = isRotatedPrinter(deviceName, printerModel)
+        ? state.renderer.getRasterDataRaw(elementsToRender, ditherMode)
+        : state.renderer.getRasterData(elementsToRender, printerWidth, printerDpi, ditherMode, printerAlignment);
+
+      for (let copy = 1; copy <= copies; copy++) {
+        await print(state.transport, rasterData, {
+          isBLE: state.connectionType === 'ble',
+          deviceName,
+          printerModel,
+          density,
+          feed,
+          onProgress: (progress) => {
+            setStatus(`Printing queue... ${progress}%`);
+          },
+        });
+
+        if (copy < copies) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    }
+
+    setStatus(`Printed ${queue.length} queued label${queue.length !== 1 ? 's' : ''}!`);
+    showToast(`Printed ${queue.length} queued label${queue.length !== 1 ? 's' : ''}`, 'success');
+  } catch (error) {
+    logError(error, 'handlePrintQueue');
+    setStatus(error.message || 'Queue print failed');
+  } finally {
+    hidePrintProgress();
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+    if (mobileBtn) {
+      mobileBtn.disabled = false;
+      mobileBtn.textContent = originalMobileText;
+    }
+  }
+}
+
+function handleBackNavigation() {
+  const returnUrl = getReturnUrlFromQuery();
+  if (returnUrl) {
+    window.location.assign(returnUrl);
+    return;
+  }
+
+  window.history.back();
+}
+
+function decodeAutoLabelQueuePayload(encoded) {
+  if (!encoded) {
+    return [];
+  }
+
+  try {
+    const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    const decoded = decodeURIComponent(Array.from(atob(padded), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''));
+    const queue = JSON.parse(decoded);
+    return Array.isArray(queue) ? queue.filter((item) => typeof item === 'string' && item.trim() !== '') : [];
+  } catch (e) {
+    console.warn('Failed to decode autolabel queue payload:', e);
+    return [];
+  }
+}
+
 function applyAutoLabelPayload(payload) {
   if (!payload || !state.renderer) {
     return false;
@@ -7143,12 +7265,18 @@ function applyAutoLabelFromQuery() {
   return applyAutoLabelPayload(payload);
 }
 
-function updateQueryForAutoLabel(encoded, autoprint = false) {
+function updateQueryForAutoLabel(encoded, autoprint = false, encodedQueue = null, returnUrl = null) {
   const url = new URL(window.location.href);
   if (encoded) {
     url.searchParams.set('autolabel', encoded);
   } else {
     url.searchParams.delete('autolabel');
+  }
+
+  if (encodedQueue) {
+    url.searchParams.set('autolabelqueue', encodedQueue);
+  } else {
+    url.searchParams.delete('autolabelqueue');
   }
 
   if (autoprint) {
@@ -7157,22 +7285,54 @@ function updateQueryForAutoLabel(encoded, autoprint = false) {
     url.searchParams.delete('autoprint');
   }
 
+  if (returnUrl && returnUrl.startsWith('/')) {
+    url.searchParams.set('return', returnUrl);
+  } else if (returnUrl === null) {
+    // Preserve existing return URL.
+  } else {
+    url.searchParams.delete('return');
+  }
+
   window.history.replaceState({}, '', url);
 }
 
-async function loadIncomingAutoLabel(encoded, autoprint = false) {
+async function loadIncomingAutoLabel(encoded, autoprint = false, returnUrl = null) {
   const payload = decodeAutoLabelPayload(encoded);
   if (!applyAutoLabelPayload(payload)) {
     return false;
   }
 
   render();
-  updateQueryForAutoLabel(encoded, autoprint);
+  state.printQueue = [];
+  updatePrintQueueUI();
+  updateQueryForAutoLabel(encoded, autoprint, null, returnUrl);
+  updateBackButtonUI();
 
   if (autoprint) {
     await tryAutoPrintIfAlreadyConnected();
   }
 
+  return true;
+}
+
+async function loadIncomingAutoLabelQueue(encodedQueue, autoprint = false, returnUrl = null) {
+  const queue = decodeAutoLabelQueuePayload(encodedQueue);
+  if (queue.length === 0) {
+    return false;
+  }
+
+  state.printQueue = queue;
+  updatePrintQueueUI();
+
+  const firstEncoded = queue[0];
+  const payload = decodeAutoLabelPayload(firstEncoded);
+  if (!applyAutoLabelPayload(payload)) {
+    return false;
+  }
+
+  render();
+  updateQueryForAutoLabel(firstEncoded, autoprint, encodedQueue, returnUrl);
+  updateBackButtonUI();
   return true;
 }
 
@@ -7189,6 +7349,33 @@ function shouldAutoPrintFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const value = (params.get('autoprint') || '').trim().toLowerCase();
   return value === '1' || value === 'true' || value === 'yes';
+}
+
+function updateBackButtonUI() {
+  const returnUrl = getReturnUrlFromQuery();
+  ['#back-btn', '#mobile-back-btn'].forEach((selector) => {
+    const button = $(selector);
+    if (!button) {
+      return;
+    }
+    button.classList.toggle('hidden', !returnUrl);
+  });
+}
+
+function updatePrintQueueUI() {
+  const count = state.printQueue.length;
+  const desktopButton = $('#print-queue-btn');
+  const mobileButton = $('#mobile-print-queue-btn');
+
+  if (desktopButton) {
+    desktopButton.classList.toggle('hidden', count === 0);
+    desktopButton.textContent = count > 0 ? `Print Queue (${count})` : 'Print Queue';
+  }
+
+  if (mobileButton) {
+    mobileButton.classList.toggle('hidden', count === 0);
+    mobileButton.textContent = count > 0 ? `Queue (${count})` : 'Queue';
+  }
 }
 
 async function tryAutoPrintIfAlreadyConnected() {
@@ -7377,6 +7564,10 @@ function init() {
   // Connect and print
   $('#connect-btn').addEventListener('click', handleConnect);
   $('#print-btn').addEventListener('click', handlePrint);
+  $('#print-queue-btn')?.addEventListener('click', handlePrintQueue);
+  $('#mobile-print-queue-btn')?.addEventListener('click', handlePrintQueue);
+  $('#back-btn')?.addEventListener('click', handleBackNavigation);
+  $('#mobile-back-btn')?.addEventListener('click', handleBackNavigation);
 
   // Printer info popup
   const printerInfoPopup = $('#printer-info-popup');
@@ -8344,10 +8535,21 @@ function init() {
   });
   $('#full-preview-print').addEventListener('click', handlePrintSinglePreview);
 
-  // Optional prefill via ?autolabel=... (base64url JSON from Part-DB quick add)
-  applyAutoLabelFromQuery();
+  // Optional prefill via ?autolabel=... or ?autolabelqueue=...
+  {
+    const params = new URLSearchParams(window.location.search);
+    const encodedQueue = params.get('autolabelqueue');
+    if (encodedQueue) {
+      loadIncomingAutoLabelQueue(encodedQueue, false).catch((e) => {
+        console.warn('Queued auto-label load failed:', e?.message || e);
+      });
+    } else {
+      applyAutoLabelFromQuery();
+    }
+  }
 
-  window.phomymoLoadAutoLabel = (encoded, autoprint = false) => loadIncomingAutoLabel(encoded, autoprint);
+  window.phomymoLoadAutoLabel = (encoded, autoprint = false, returnUrl = null) => loadIncomingAutoLabel(encoded, autoprint, returnUrl);
+  window.phomymoLoadAutoLabelQueue = (encodedQueue, autoprint = false, returnUrl = null) => loadIncomingAutoLabelQueue(encodedQueue, autoprint, returnUrl);
   window.addEventListener('message', (event) => {
     if (event.origin !== window.location.origin) {
       return;
@@ -8368,6 +8570,8 @@ function init() {
 
   // Detect template fields on load
   detectTemplateFields();
+  updateBackButtonUI();
+  updatePrintQueueUI();
 
   // Show info dialog on first visit
   if (shouldShowInfoOnLoad()) {

@@ -310,6 +310,20 @@ class ScanController extends AbstractController
         ]);
     }
 
+    #[Route(path: '/part-label/{id}', name: 'scan_part_label_print', methods: ['GET'])]
+    public function printPartLabel(Part $part, Request $request): RedirectResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.label_scanner');
+        $this->denyAccessUnlessGranted('read', $part);
+
+        $returnUrl = trim((string) $request->query->get('return', ''));
+        if ($returnUrl === '' || !str_starts_with($returnUrl, '/')) {
+            $returnUrl = $this->generateUrl('part_info', ['id' => $part->getID()]);
+        }
+
+        return new RedirectResponse($this->buildPhomymoPrintUrl($part, returnUrl));
+    }
+
     #[Route(path: '/quick-add/lookup', name: 'scan_quick_add_lookup', methods: ['POST'])]
     public function quickAddLookup(
         Request $request,
@@ -690,7 +704,7 @@ class ScanController extends AbstractController
 
         $printUrl = null;
         try {
-            $printUrl = $this->buildPhomymoPrintUrl($part, $partLot);
+            $printUrl = $this->buildPhomymoPrintUrl($part);
         } catch (\Throwable) {
             $printUrl = null;
         }
@@ -1298,7 +1312,7 @@ class ScanController extends AbstractController
         return null;
     }
 
-    private function buildPhomymoPrintUrl(Part $part, PartLot $partLot): string
+    private function buildPhomymoPrintUrl(Part $part, ?string $returnUrl = null): string
     {
         $barcodeUrl = $this->generateUrl('scan_qr', [
             'type' => 'part',
@@ -1306,15 +1320,23 @@ class ScanController extends AbstractController
         ], UrlGeneratorInterface::ABSOLUTE_URL);
 
         $payload = [
-            'layout' => 'part_qr_left',
+            'layout' => 'storage_default',
             'name' => $part->getName(),
-            'category' => $part->getCategory()?->getFullPath() ?? '',
             'barcode' => $barcodeUrl,
         ];
 
+        return $this->buildPhomymoAutolabelUrl($payload, $returnUrl);
+    }
+
+    private function buildPhomymoAutolabelUrl(array $payload, ?string $returnUrl = null): string
+    {
+        if ($returnUrl !== null && !str_starts_with($returnUrl, '/')) {
+            $returnUrl = null;
+        }
+
         $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
         if (!is_string($json)) {
-            $json = '{"name":"Part","category":"","storageLocation":"","barcode":""}';
+            $json = '{"name":"Label","barcode":""}';
         }
         $encodedBase64 = base64_encode($json);
         if (!is_string($encodedBase64)) {
@@ -1322,10 +1344,15 @@ class ScanController extends AbstractController
         }
         $encoded = rtrim(strtr($encodedBase64, '+/', '-_'), '=');
 
-        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1';
+        $url = '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1';
+        if ($returnUrl !== null) {
+            $url .= '&return=' . rawurlencode($returnUrl);
+        }
+
+        return $url;
     }
 
-    private function buildPhomymoStorageLocationPrintUrl(StorageLocation $location): string
+    private function buildPhomymoStorageLocationPrintUrl(StorageLocation $location, ?string $returnUrl = null): string
     {
         $partsFilteredUrl = $this->generateUrl('parts_show_all', [
             'part_filter' => [
@@ -1337,23 +1364,14 @@ class ScanController extends AbstractController
         ], UrlGeneratorInterface::ABSOLUTE_URL);
 
         $payload = [
+            'layout' => 'storage_default',
             'name' => $location->getName(),
             'category' => 'Storage Location',
             'storageLocation' => $location->getFullPath(),
             'barcode' => $partsFilteredUrl,
         ];
 
-        $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
-        if (!is_string($json)) {
-            $json = '{"name":"Storage Location","category":"Storage Location","storageLocation":"","barcode":""}';
-        }
-        $encodedBase64 = base64_encode($json);
-        if (!is_string($encodedBase64)) {
-            $encodedBase64 = '';
-        }
-        $encoded = rtrim(strtr($encodedBase64, '+/', '-_'), '=');
-
-        return '/phomymo/index.html?autolabel=' . rawurlencode($encoded) . '&autoprint=1';
+        return $this->buildPhomymoAutolabelUrl($payload, $returnUrl);
     }
 
     private function fetchProviderDto(PartInfoRetriever $infoRetriever, array $createInfos, bool $isEigp114): mixed
@@ -1487,6 +1505,7 @@ class ScanController extends AbstractController
                 'lotAmount' => $lot?->isInstockUnknown() ? null : $lot?->getAmount(),
                 'lotUnknown' => $lot?->isInstockUnknown() ?? true,
                 'openUrl' => $this->generateUrl('part_info', ['id' => $part->getID()]),
+                'printUrl' => $this->buildPhomymoPrintUrl($part, $this->generateUrl('scan_stock_terminal')),
                 'newlyCreated' => $newlyCreated,
             ],
         ];

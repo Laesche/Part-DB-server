@@ -8,6 +8,7 @@ import { Html5Qrcode } from "@part-db/html5-qrcode";
 /* stimulusFetch: 'lazy' */
 
 const CAMERA_STORAGE_KEY = "stock-terminal-camera-id";
+const PHOMYMO_TAB_NAME = "partdb-phomymo";
 
 export default class extends Controller {
     static targets = [
@@ -16,6 +17,7 @@ export default class extends Controller {
         "notice",
         "noticeText",
         "locationBanner",
+        "queueBanner",
         "modal",
         "modalTitle",
         "modalSubtitle",
@@ -43,6 +45,7 @@ export default class extends Controller {
         partDetailsUrlTemplate: String,
         searchUrlTemplate: String,
         partUrlTemplate: String,
+        printerReturnUrl: String,
         csrfToken: String,
     };
 
@@ -53,6 +56,7 @@ export default class extends Controller {
     _activeLocation = null;
     _activePart = null;
     _activeStorage = null;
+    _printQueue = [];
     _cameras = [];
     _searchTimer = null;
     _readerObserver = null;
@@ -249,6 +253,29 @@ export default class extends Controller {
         }
     }
 
+    printQueue() {
+        if (this._printQueue.length === 0) {
+            this._setStatus("No labels are queued yet.", "info");
+            return;
+        }
+
+        const encodedQueue = this._encodeQueuePayload(this._printQueue.map((item) => item.encoded));
+        if (!encodedQueue) {
+            this._showNotice("Could not prepare the print queue.");
+            return;
+        }
+
+        const url = `/phomymo/index.html?autolabelqueue=${encodeURIComponent(encodedQueue)}&return=${encodeURIComponent(this.printerReturnUrlValue)}`;
+        this._openPhomymoTab(url, true);
+        this._setStatus(`Opened ${this._printQueue.length} queued label${this._printQueue.length === 1 ? "" : "s"} in the printer page.`, "success");
+    }
+
+    clearPrintQueue() {
+        this._printQueue = [];
+        this._renderPrintQueue();
+        this._setStatus("Label queue cleared.", "info");
+    }
+
     async addStock() {
         await this._changeStock("add");
     }
@@ -433,6 +460,9 @@ export default class extends Controller {
 
             this._activePart = data.part;
             this._showPartModal(data.part);
+            if (action === "add" && data.part?.printUrl) {
+                this._queueLabel(data.part.printUrl);
+            }
             this._setStatus(data.message || "Stock updated.", "success");
             this.stockAmountTarget.value = "1";
         } catch (_) {
@@ -501,6 +531,28 @@ export default class extends Controller {
 
         this.locationBannerTarget.classList.add("stock-terminal-active--hidden");
         this.locationBannerTarget.innerHTML = "";
+    }
+
+    _renderPrintQueue() {
+        if (!this.hasQueueBannerTarget) {
+            return;
+        }
+
+        const count = this._printQueue.length;
+        if (count > 0) {
+            this.queueBannerTarget.classList.remove("stock-terminal-active--hidden");
+            this.queueBannerTarget.innerHTML = `
+                <span>${count} label${count === 1 ? "" : "s"} queued for printing</span>
+                <span class="d-flex gap-2">
+                    <button type="button" class="terminal-chip terminal-chip--primary" data-action="click->pages--stock-terminal#printQueue">Print Queue</button>
+                    <button type="button" class="terminal-chip terminal-chip--danger" data-action="click->pages--stock-terminal#clearPrintQueue">Clear</button>
+                </span>
+            `;
+            return;
+        }
+
+        this.queueBannerTarget.classList.add("stock-terminal-active--hidden");
+        this.queueBannerTarget.innerHTML = "";
     }
 
     _setStatus(message, level) {
@@ -605,6 +657,86 @@ export default class extends Controller {
             this.busyOverlayTarget.classList.remove("d-none");
         } else {
             this.busyOverlayTarget.classList.add("d-none");
+        }
+    }
+
+    _queueLabel(url) {
+        const encoded = this._extractAutoLabel(url);
+        if (!encoded) {
+            return;
+        }
+
+        this._printQueue.push({ encoded });
+        this._renderPrintQueue();
+    }
+
+    _extractAutoLabel(url) {
+        try {
+            const parsed = new URL(url, window.location.origin);
+            return parsed.searchParams.get("autolabel");
+        } catch (_) {
+            return null;
+        }
+    }
+
+    _encodeQueuePayload(queue) {
+        try {
+            const json = JSON.stringify(queue);
+            const utf8 = encodeURIComponent(json).replace(/%([0-9A-F]{2})/gu, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+            return window.btoa(utf8).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+        } catch (_) {
+            return null;
+        }
+    }
+
+    _openPhomymoTab(url, isQueue = false) {
+        const phomymoTab = window.open("", PHOMYMO_TAB_NAME);
+        if (!phomymoTab) {
+            window.location.href = url;
+            return;
+        }
+
+        if (this._sendToExistingPhomymoTab(phomymoTab, url, isQueue)) {
+            phomymoTab.focus();
+            return;
+        }
+
+        phomymoTab.location.href = url;
+        phomymoTab.focus();
+    }
+
+    _sendToExistingPhomymoTab(phomymoTab, url, isQueue) {
+        try {
+            const tabLocation = phomymoTab.location;
+            const isPhomymoTab = tabLocation?.origin === window.location.origin
+                && tabLocation?.pathname?.includes("/phomymo/");
+            if (!isPhomymoTab) {
+                return false;
+            }
+
+            const targetUrl = new URL(url, window.location.origin);
+            if (isQueue) {
+                const encodedQueue = targetUrl.searchParams.get("autolabelqueue");
+                const returnUrl = targetUrl.searchParams.get("return");
+                if (!encodedQueue || typeof phomymoTab.phomymoLoadAutoLabelQueue !== "function") {
+                    return false;
+                }
+                phomymoTab.phomymoLoadAutoLabelQueue(encodedQueue, false, returnUrl);
+                return true;
+            }
+
+            const encoded = targetUrl.searchParams.get("autolabel");
+            const autoprintValue = String(targetUrl.searchParams.get("autoprint") ?? "").toLowerCase();
+            const autoprint = autoprintValue === "1" || autoprintValue === "true" || autoprintValue === "yes";
+            const returnUrl = targetUrl.searchParams.get("return");
+            if (!encoded || typeof phomymoTab.phomymoLoadAutoLabel !== "function") {
+                return false;
+            }
+
+            phomymoTab.phomymoLoadAutoLabel(encoded, autoprint, returnUrl);
+            return true;
+        } catch (_) {
+            return false;
         }
     }
 }

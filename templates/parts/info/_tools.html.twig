@@ -68,6 +68,12 @@
 
 {{ dropdown.profile_dropdown('part', part.id) }}
 
+{% if is_granted('@tools.label_scanner') and is_granted('read', part) %}
+    <a class="btn btn-outline-secondary mt-2" href="{{ path('scan_part_label_print', {'id': part.id, 'return': uri_without_host(app.request)}) }}" title="Print part QR label">
+        <i class="fas fa-qrcode fa-fw"></i>
+    </a>
+{% endif %}
+
 <a class="btn btn-success mt-2" {% if not is_granted('@projects.edit') %}disabled{% endif %}
    href="{{ path('project_add_parts_no_id', {"parts": part.id, "_redirect":  uri_without_host(app.request)}) }}">
     <i class="fa-solid fa-magnifying-glass-plus fa-fw"></i>

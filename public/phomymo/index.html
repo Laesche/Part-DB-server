@@ -313,6 +313,11 @@
   <!-- Mobile Top Bar -->
   <header id="mobile-header" class="mobile-only fixed top-0 left-0 right-0 bg-white border-b border-gray-200 px-3 py-2 z-40">
     <div class="flex items-center w-full">
+      <button id="mobile-back-btn" class="hidden p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 flex-shrink-0" title="Back">
+        <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
       <!-- Hamburger Menu Button -->
       <button id="mobile-menu-btn" class="p-2 -ml-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 flex-shrink-0">
         <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -335,6 +340,9 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
           </svg>
         </button>
+        <button id="mobile-print-queue-btn" class="hidden px-3 py-2 bg-gray-900 text-white rounded-lg active:bg-gray-700 flex-shrink-0 text-xs font-medium">
+          Queue
+        </button>
       </div>
 
       <!-- GitHub & Affordable Magic Links (far right) -->
@@ -353,6 +361,9 @@
   <header class="desktop-only bg-white border-b border-gray-200 px-2 sm:px-4 py-2 flex-shrink-0">
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+        <button id="back-btn" class="hidden px-2 sm:px-3 py-1 sm:py-1.5 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 text-xs sm:text-sm font-medium transition-colors">
+          Back
+        </button>
         <div class="flex items-center gap-1 sm:gap-2">
           <h1 class="text-base sm:text-lg font-semibold text-gray-900">Phomymo</h1>
           <button id="info-btn" class="text-gray-400 hover:text-gray-600 transition-colors" title="About this project">
@@ -441,6 +452,9 @@
           </button>
           <button id="print-btn" class="px-3 sm:px-5 py-1.5 sm:py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs sm:text-sm font-medium rounded-r-lg transition-colors">
             Print
+          </button>
+          <button id="print-queue-btn" class="hidden px-3 sm:px-5 py-1.5 sm:py-2 bg-gray-900 hover:bg-gray-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors">
+            Print Queue
           </button>
         </div>
       </div>
