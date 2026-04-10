@@ -31,7 +31,9 @@ use App\Services\System\GitVersionInfoProvider;
 use App\Services\System\UpdateAvailableFacade;
 use App\Settings\AppSettings;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Runtime\SymfonyRuntime;
 
@@ -128,5 +130,24 @@ class ToolsController extends AbstractController
         $this->denyAccessUnlessGranted('@tools.ic_logos');
 
         return $this->render('tools/ic_logos/ic_logos.html.twig');
+    }
+
+    #[Route(path: '/download_root_cert', name: 'tools_download_root_cert')]
+    public function downloadRootCert(): BinaryFileResponse
+    {
+        $this->denyAccessUnlessGranted('@tools.download_root_cert');
+
+        $filePath = $this->getParameter('kernel.project_dir') . '/public/root.crt';
+
+        if (!file_exists($filePath)) {
+            throw $this->createNotFoundException('Root certificate file not found');
+        }
+
+        $response = new BinaryFileResponse($filePath);
+
+        // Set header content disposition, so that the file will be downloaded
+        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_ATTACHMENT, 'root.crt');
+
+        return $response;
     }
 }
