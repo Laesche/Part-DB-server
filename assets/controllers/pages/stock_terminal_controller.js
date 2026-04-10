@@ -17,7 +17,7 @@ export default class extends Controller {
         "notice",
         "noticeText",
         "locationBanner",
-        "queueBanner",
+        "queueButton",
         "modal",
         "modalTitle",
         "modalSubtitle",
@@ -148,6 +148,9 @@ export default class extends Controller {
             } else if (data.mode === "part" && data.part) {
                 this._activePart = data.part;
                 this._showPartModal(data.part);
+                if (data.part.newlyCreated && data.part.printUrl) {
+                    this._queueLabel(data.part.printUrl);
+                }
             }
         } catch (_) {
             this._setStatus("Scan failed. Please try again.", "warning");
@@ -272,7 +275,7 @@ export default class extends Controller {
 
     clearPrintQueue() {
         this._printQueue = [];
-        this._renderPrintQueue();
+        this._renderQueueButton();
         this._setStatus("Label queue cleared.", "info");
     }
 
@@ -460,9 +463,6 @@ export default class extends Controller {
 
             this._activePart = data.part;
             this._showPartModal(data.part);
-            if (action === "add" && data.part?.printUrl) {
-                this._queueLabel(data.part.printUrl);
-            }
             this._setStatus(data.message || "Stock updated.", "success");
             this.stockAmountTarget.value = "1";
         } catch (_) {
@@ -533,26 +533,15 @@ export default class extends Controller {
         this.locationBannerTarget.innerHTML = "";
     }
 
-    _renderPrintQueue() {
-        if (!this.hasQueueBannerTarget) {
+    _renderQueueButton() {
+        if (!this.hasQueueButtonTarget) {
             return;
         }
 
         const count = this._printQueue.length;
-        if (count > 0) {
-            this.queueBannerTarget.classList.remove("stock-terminal-active--hidden");
-            this.queueBannerTarget.innerHTML = `
-                <span>${count} label${count === 1 ? "" : "s"} queued for printing</span>
-                <span class="d-flex gap-2">
-                    <button type="button" class="terminal-chip terminal-chip--primary" data-action="click->pages--stock-terminal#printQueue">Print Queue</button>
-                    <button type="button" class="terminal-chip terminal-chip--danger" data-action="click->pages--stock-terminal#clearPrintQueue">Clear</button>
-                </span>
-            `;
-            return;
-        }
-
-        this.queueBannerTarget.classList.add("stock-terminal-active--hidden");
-        this.queueBannerTarget.innerHTML = "";
+        this.queueButtonTarget.classList.toggle("d-none", count === 0);
+        this.queueButtonTarget.setAttribute("aria-label", count > 0 ? `Print ${count} queued labels` : "Print queued labels");
+        this.queueButtonTarget.title = count > 0 ? `${count} label${count === 1 ? "" : "s"} queued` : "";
     }
 
     _setStatus(message, level) {
@@ -667,7 +656,7 @@ export default class extends Controller {
         }
 
         this._printQueue.push({ encoded });
-        this._renderPrintQueue();
+        this._renderQueueButton();
     }
 
     _extractAutoLabel(url) {

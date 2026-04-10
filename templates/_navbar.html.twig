@@ -11,8 +11,8 @@
                 <i class="fas fa-folder-open fa-lg fa-fw"></i>
             </button>
             {% if is_granted("@tools.label_scanner") %}
-                <a href="{{ path('scan_quick_add') }}" class="navbar-toggler nav-link ms-3" {{ stimulus_action('common/mobile-overlays', 'openCamera') }}>
-                    <i class="fas fa-camera-retro fa-fw"></i>
+                <a href="{{ path('scan_stock_terminal') }}" class="navbar-toggler nav-link ms-3" title="Stock Terminal">
+                    <i class="fas fa-expand fa-fw"></i>
                 </a>
             {% endif %}
         </div>
