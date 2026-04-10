@@ -7175,6 +7175,7 @@ function applyAutoLabelPayload(payload) {
       });
       nameElement.fontSize = 28;
       nameElement.fontWeight = 'bold';
+      nameElement.align = 'center';
       nameElement.autoScale = true;
       nameElement.noWrap = true;
       nameElement.clipOverflow = true;
@@ -7191,6 +7192,7 @@ function applyAutoLabelPayload(payload) {
       });
       nameElement.fontSize = 18;
       nameElement.fontWeight = 'bold';
+      nameElement.align = 'center';
       nameElement.autoScale = false;
       nameElement.noWrap = true;
       nameElement.clipOverflow = true;
